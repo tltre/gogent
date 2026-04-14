@@ -1,0 +1,90 @@
+name: my-agent
+version: "1.0.0"
+
+components:
+  # EventBus - 消息总线
+  - name: "eventbus-main"
+    type: "eventbus"
+    driver: "native"
+
+  # Provider - LLM 提供者
+  - name: "provider-openai"
+    type: "provider"
+    driver: "http"
+    config:
+      endpoint: "https://api.openai.com/v1"
+      apiKey: "${OPENAI_API_KEY}"
+      model: "gpt-4"
+      timeout: "60s"
+
+  # Tool Manager - 工具管理
+  - name: "tools-main"
+    type: "tool"
+    driver: "native"
+    config:
+      tools:
+        - name: "calculator"
+          description: "Calculate mathematical expressions"
+          driver: "native"
+        - name: "search"
+          description: "Search the web"
+          driver: "http"
+          endpoint: "http://localhost:8080/tools/search"
+
+  # Hook Manager - 钩子管理
+  - name: "hooks-main"
+    type: "hook"
+    driver: "native"
+    config:
+      hooks:
+        - name: "logger"
+          driver: "native"
+          events: ["beforeRun", "afterRun", "error"]
+
+  # Context Manager - 上下文管理
+  - name: "context-main"
+    type: "contextmanager"
+    driver: "native"
+
+  # Memory - 记忆存储
+  - name: "memory-main"
+    type: "memory"
+    driver: "native"
+
+  # Sandbox - 沙箱环境
+  - name: "sandbox-main"
+    type: "sandbox"
+    driver: "native"
+    config:
+      maxMemoryMB: 512
+      maxCPUTime: "10s"
+      networkAccess: false
+
+  # Channel - 消息渠道
+  - name: "channel-cli"
+    type: "channel"
+    driver: "native"
+    config:
+      bufferSize: 100
+
+  # AgentCore - Agent 核心
+  - name: "agent-main"
+    type: "agentcore"
+    driver: "native"
+    dependencies:
+      provider: "provider-openai"
+      toolManager: "tools-main"
+      hookManager: "hooks-main"
+      contextManager: "context-main"
+      memory: "memory-main"
+      eventBus: "eventbus-main"
+
+defaults:
+  eventbus: "eventbus-main"
+  provider: "provider-openai"
+  tool: "tools-main"
+  hook: "hooks-main"
+  contextmanager: "context-main"
+  memory: "memory-main"
+  sandbox: "sandbox-main"
+  agentcore: "agent-main"
