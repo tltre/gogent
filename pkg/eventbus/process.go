@@ -12,15 +12,15 @@ type ProcessEventBusConfig struct {
 }
 
 type ProcessEventBus struct {
-	cfg *ProcessEventBusConfig
+	tr *client.LazyTransport
 }
 
 func NewProcessEventBus(cfg *ProcessEventBusConfig) *ProcessEventBus {
-	return &ProcessEventBus{cfg: cfg}
+	return &ProcessEventBus{tr: client.WrapLazy(cfg.Transport)}
 }
 
 func (b *ProcessEventBus) Publish(ctx context.Context, topic Topic, event Event) error {
-	return b.cfg.Transport.Call(ctx, "eventbus/publish", map[string]any{
+	return b.tr.Call(ctx, "eventbus/publish", map[string]any{
 		"topic": topic,
 		"event": event,
 	}, nil)

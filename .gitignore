@@ -22,3 +22,6 @@ vendor/
 .env
 .env.local
 *.log
+
+# Tests
+tests/

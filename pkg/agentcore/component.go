@@ -9,6 +9,7 @@ import (
 	"github.com/tltre/gagent/pkg/hook"
 	"github.com/tltre/gagent/pkg/memory"
 	"github.com/tltre/gagent/pkg/provider"
+	"github.com/tltre/gagent/pkg/sandbox"
 	"github.com/tltre/gagent/pkg/tool"
 )
 
@@ -21,6 +22,7 @@ type AgentRuntime struct {
 	ContextManager contextmanager.IContextManager
 	Memory         memory.IMemory
 	EventBus       eventbus.IEventBus
+	Sandbox        sandbox.ISandbox
 }
 
 func NewComponent(name string, agent IAgentCore) *AgentRuntime {
@@ -69,6 +71,11 @@ func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Regis
 			c.EventBus = eb
 		}
 	}
+	if c.Sandbox == nil {
+		if sb, ok := registry.GetDefault(component.ComponentSandbox).(sandbox.ISandbox); ok && sb != nil {
+			c.Sandbox = sb
+		}
+	}
 	c.Agent.SetAgentRuntime(c)
 	return nil
 }
@@ -105,6 +112,10 @@ func (c *AgentRuntime) Dependencies() map[string]component.DependencySpec {
 		},
 		"EventBus": {
 			Type:     component.ComponentEventBus,
+			Required: false,
+		},
+		"Sandbox": {
+			Type:     component.ComponentSandbox,
 			Required: false,
 		},
 	}
@@ -153,6 +164,11 @@ func (c *AgentRuntime) SetMemory(memory memory.IMemory) *AgentRuntime {
 
 func (c *AgentRuntime) SetEventBus(eventBus eventbus.IEventBus) *AgentRuntime {
 	c.EventBus = eventBus
+	return c
+}
+
+func (c *AgentRuntime) SetSandbox(sb sandbox.ISandbox) *AgentRuntime {
+	c.Sandbox = sb
 	return c
 }
 

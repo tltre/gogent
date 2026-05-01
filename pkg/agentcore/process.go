@@ -12,16 +12,16 @@ type ProcessAgentCoreConfig struct {
 }
 
 type ProcessAgentCore struct {
-	cfg *ProcessAgentCoreConfig
+	tr *client.LazyTransport
 }
 
 func NewProcessAgentCore(cfg *ProcessAgentCoreConfig) *ProcessAgentCore {
-	return &ProcessAgentCore{cfg: cfg}
+	return &ProcessAgentCore{tr: client.WrapLazy(cfg.Transport)}
 }
 
 func (a *ProcessAgentCore) Run(ctx context.Context, input Input) (Output, error) {
 	var result Output
-	if err := a.cfg.Transport.Call(ctx, "agent/run", input, &result); err != nil {
+	if err := a.tr.Call(ctx, "agent/run", input, &result); err != nil {
 		return Output{}, err
 	}
 	return result, nil
@@ -39,5 +39,4 @@ func (a *ProcessAgentCore) Stream(ctx context.Context, input Input) (<-chan Even
 }
 
 func (a *ProcessAgentCore) SetAgentRuntime(runtime *AgentRuntime) {
-	// ProcessAgentCore doesn't need runtime — it delegates to remote
 }

@@ -12,16 +12,16 @@ type ProcessProviderConfig struct {
 }
 
 type ProcessProvider struct {
-	cfg *ProcessProviderConfig
+	tr *client.LazyTransport
 }
 
 func NewProcessProvider(cfg *ProcessProviderConfig) *ProcessProvider {
-	return &ProcessProvider{cfg: cfg}
+	return &ProcessProvider{tr: client.WrapLazy(cfg.Transport)}
 }
 
 func (p *ProcessProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
 	var result Response
-	if err := p.cfg.Transport.Call(ctx, "provider/generate", messages, &result); err != nil {
+	if err := p.tr.Call(ctx, "provider/generate", messages, &result); err != nil {
 		return Response{}, err
 	}
 	return result, nil
@@ -40,6 +40,6 @@ func (p *ProcessProvider) Stream(ctx context.Context, messages []ProviderMessage
 
 func (p *ProcessProvider) ModelInfo() ModelInfo {
 	var result ModelInfo
-	_ = p.cfg.Transport.Call(context.Background(), "provider/modelInfo", nil, &result)
+	_ = p.tr.Call(context.Background(), "provider/modelInfo", nil, &result)
 	return result
 }

@@ -15,10 +15,14 @@ type ProcessToolConfig struct {
 
 type ProcessTool struct {
 	config *ProcessToolConfig
+	tr     *client.LazyTransport
 }
 
 func NewProcessTool(cfg *ProcessToolConfig) *ProcessTool {
-	return &ProcessTool{config: cfg}
+	return &ProcessTool{
+		config: cfg,
+		tr:     client.WrapLazy(cfg.Transport),
+	}
 }
 
 func (t *ProcessTool) Info() ToolInfo {
@@ -34,7 +38,7 @@ func (t *ProcessTool) Execute(ctx context.Context, params map[string]any) (Resul
 		Arguments map[string]any `json:"arguments"`
 	}
 	var result Result
-	if err := t.config.Transport.Call(ctx, "tools/call", callParams{
+	if err := t.tr.Call(ctx, "tools/call", callParams{
 		Name:      t.config.ToolName,
 		Arguments: params,
 	}, &result); err != nil {

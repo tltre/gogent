@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 const ProtocolVersion = "0.1.0"
@@ -43,4 +44,32 @@ func unmarshalResult(raw json.RawMessage, result any) error {
 		return nil
 	}
 	return json.Unmarshal(raw, result)
+}
+
+type LazyTransport struct {
+	tr      Transport
+	mu      sync.Mutex
+	started bool
+}
+
+func WrapLazy(tr Transport) *LazyTransport {
+	return &LazyTransport{tr: tr}
+}
+
+func (t *LazyTransport) Call(ctx context.Context, method string, params any, result any) error {
+	t.mu.Lock()
+	if !t.started {
+		t.started = true
+		t.mu.Unlock()
+		if err := t.tr.Start(ctx); err != nil {
+			return err
+		}
+	} else {
+		t.mu.Unlock()
+	}
+	return t.tr.Call(ctx, method, params, result)
+}
+
+func (t *LazyTransport) Close() error {
+	return t.tr.Close()
 }

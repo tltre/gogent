@@ -106,38 +106,46 @@ func (r *Registry) SetDefault(typ ComponentType, name string) error {
 }
 
 func (r *Registry) InitializeAll(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+	r.mu.RLock()
 	order, err := r.topologicalSort()
 	if err != nil {
+		r.mu.RUnlock()
 		return err
 	}
+	comps := make([]Component, len(order))
+	for i, name := range order {
+		comps[i] = r.components[name]
+	}
+	r.mu.RUnlock()
 
-	for _, name := range order {
-		c := r.components[name]
+	for _, c := range comps {
 		if err := c.Initialize(ctx, r); err != nil {
-			return fmt.Errorf("initialize component %s: %w", name, err)
+			return fmt.Errorf("initialize component %s: %w", c.GetName(), err)
 		}
 	}
 
+	r.mu.Lock()
 	r.initialized = true
+	r.mu.Unlock()
 	return nil
 }
 
 func (r *Registry) StartAll(ctx context.Context) error {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	order, err := r.topologicalSort()
 	if err != nil {
+		r.mu.RUnlock()
 		return err
 	}
+	comps := make([]Component, len(order))
+	for i, name := range order {
+		comps[i] = r.components[name]
+	}
+	r.mu.RUnlock()
 
-	for _, name := range order {
-		c := r.components[name]
+	for _, c := range comps {
 		if err := c.Start(ctx); err != nil {
-			return fmt.Errorf("start component %s: %w", name, err)
+			return fmt.Errorf("start component %s: %w", c.GetName(), err)
 		}
 	}
 	return nil
@@ -145,17 +153,20 @@ func (r *Registry) StartAll(ctx context.Context) error {
 
 func (r *Registry) StopAll(ctx context.Context) error {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	order, err := r.topologicalSort()
 	if err != nil {
+		r.mu.RUnlock()
 		return err
 	}
+	comps := make([]Component, len(order))
+	for i, name := range order {
+		comps[i] = r.components[name]
+	}
+	r.mu.RUnlock()
 
-	for i := len(order) - 1; i >= 0; i-- {
-		c := r.components[order[i]]
-		if err := c.Stop(ctx); err != nil {
-			return fmt.Errorf("stop component %s: %w", c.GetName(), err)
+	for i := len(comps) - 1; i >= 0; i-- {
+		if err := comps[i].Stop(ctx); err != nil {
+			return fmt.Errorf("stop component %s: %w", comps[i].GetName(), err)
 		}
 	}
 	return nil

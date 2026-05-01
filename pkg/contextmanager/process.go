@@ -12,21 +12,21 @@ type ProcessContextManagerConfig struct {
 }
 
 type ProcessContextManager struct {
-	cfg *ProcessContextManagerConfig
+	tr *client.LazyTransport
 }
 
 func NewProcessContextManager(cfg *ProcessContextManagerConfig) *ProcessContextManager {
-	return &ProcessContextManager{cfg: cfg}
+	return &ProcessContextManager{tr: client.WrapLazy(cfg.Transport)}
 }
 
 func (c *ProcessContextManager) NewSession() string {
 	var id string
-	_ = c.cfg.Transport.Call(context.Background(), "context/newSession", nil, &id)
+	_ = c.tr.Call(context.Background(), "context/newSession", nil, &id)
 	return id
 }
 
 func (c *ProcessContextManager) AddMessage(sessionId string, msg ContextMessage) error {
-	return c.cfg.Transport.Call(context.Background(), "context/addMessage", map[string]any{
+	return c.tr.Call(context.Background(), "context/addMessage", map[string]any{
 		"sessionId": sessionId,
 		"message":   msg,
 	}, nil)
@@ -34,13 +34,13 @@ func (c *ProcessContextManager) AddMessage(sessionId string, msg ContextMessage)
 
 func (c *ProcessContextManager) GetMessages(sessionId string) []ContextMessage {
 	var result []ContextMessage
-	_ = c.cfg.Transport.Call(context.Background(), "context/getMessages", sessionId, &result)
+	_ = c.tr.Call(context.Background(), "context/getMessages", sessionId, &result)
 	return result
 }
 
 func (c *ProcessContextManager) GetSummary(sessionId string) (Summary, error) {
 	var result Summary
-	if err := c.cfg.Transport.Call(context.Background(), "context/getSummary", sessionId, &result); err != nil {
+	if err := c.tr.Call(context.Background(), "context/getSummary", sessionId, &result); err != nil {
 		return Summary{}, err
 	}
 	return result, nil
@@ -48,14 +48,14 @@ func (c *ProcessContextManager) GetSummary(sessionId string) (Summary, error) {
 
 func (c *ProcessContextManager) BuildSystemPrompt(sessionId string) string {
 	var result string
-	_ = c.cfg.Transport.Call(context.Background(), "context/buildSystemPrompt", sessionId, &result)
+	_ = c.tr.Call(context.Background(), "context/buildSystemPrompt", sessionId, &result)
 	return result
 }
 
 func (c *ProcessContextManager) Clear(sessionId string) error {
-	return c.cfg.Transport.Call(context.Background(), "context/clear", sessionId, nil)
+	return c.tr.Call(context.Background(), "context/clear", sessionId, nil)
 }
 
 func (c *ProcessContextManager) DeleteSession(sessionId string) {
-	_ = c.cfg.Transport.Call(context.Background(), "context/deleteSession", sessionId, nil)
+	_ = c.tr.Call(context.Background(), "context/deleteSession", sessionId, nil)
 }
