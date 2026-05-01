@@ -2,84 +2,234 @@
 
 ## 概述
 
-Gogent 是一个基于 Go 语言的 IAgentCore 基础设施框架，采用模块化组件架构，支持多种驱动方式（Native、HTTP、Process），可快速构建可扩展的 IAgentCore 应用。
+Gogent 是一个基于 Go 语言的 Agent 基础设施框架，采用模块化组件架构，支持 Native（进程内）、Process（stdio 子进程）、HTTP（远程）三种驱动方式。
 
 ## 核心设计原则
 
 ### 1. 组件化架构
 
-所有子系统统一实现 `AgentRuntime` 接口：
+所有子系统统一实现 `Component` 接口：
 
 ```go
-type AgentRuntime interface {
-    Name() string
-    Type() ComponentType
-    Initialize(ctx context.Context, registry Dependencies) error
+type Component interface {
+    GetName() string
+    GetType() ComponentType
+    Initialize(ctx context.Context, deps *Registry) error
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
     Dependencies() map[string]DependencySpec
 }
 ```
 
-**优势**：
-- 统一生命周期管理
-- 自动依赖解析
-- 支持热插拔
+每个组件是一个包装器（如 `ProviderComponent`），内部持有一个业务接口实现（`IProvider`），同时暴露 `Component` 生命周期方法和业务方法。
 
 ### 2. 驱动分离
 
-每个子系统支持多种驱动实现：
+同一业务接口，三种驱动实现，对外透明：
 
-| 驱动 | 用途 | 通信方式 |
-|------|------|----------|
-| Native | 代码级实现 | 直接调用 |
-| HTTP | 远程服务 | REST API |
-| Process | 本地进程 | MCP 协议 (stdio) |
+| 驱动 | 通信方式 | 组件获取方式 |
+|------|----------|-------------|
+| Native | 直接函数调用 | BuildOption `With*()` 注入 |
+| Process | stdio + JSON-RPC | `StdioTransport` 管理子进程 |
+| HTTP | HTTP POST + JSON-RPC | `HTTPTransport` 连接远程端点 |
 
-**优势**：
-- 用户可选择二开、远程调用或进程隔离
-- 同一接口，不同实现
-- 便于测试和 Mock
+关键：AgentCore 调用 `provider.Generate()` 时，不关心对方是本地代码、子进程还是远程 HTTP——接口一致。
 
 ### 3. 依赖注入
 
-组件依赖通过 `Dependencies` 接口注入：
+`Registry` 管理所有组件，`topologicalSort()` 自动解析依赖顺序：
 
-```go
-type Dependencies interface {
-    Get(name string) AgentRuntime
-    GetByType(typ ComponentType) []AgentRuntime
-    GetDefault(typ ComponentType) AgentRuntime
-}
+```
+InitializeAll → topologicalSort → [eventbus, memory, provider, tool, hook, context, sandbox, agentcore]
 ```
 
-**初始化流程**：
-1. 解析所有组件的 `Dependencies()`
-2. 构建依赖图
-3. 拓扑排序
-4. 按顺序初始化
+AgentCore 在 `Initialize()` 中通过 `registry.GetDefault(type)` 获取所有依赖，注入 `AgentRuntime`。
 
 ### 4. 配置驱动
 
-通过 YAML 配置组装应用：
+YAML 声明组件 → Builder 解析 → Registry 注册 → App 运行：
 
 ```yaml
 components:
-  - name: "provider-openai"
+  - name: "provider-main"
     type: "provider"
-    driver: "http"
+    driver: "process"
     config:
-      endpoint: "https://api.openai.com/v1"
-      apiKey: "${OPENAI_API_KEY}"
+      command: "./provider-daemon"
+      env: ["KEY=value"]
+defaults:
+  provider: "provider-main"
 ```
+
+## Transport 层
+
+### 设计
+
+`Transport` 接口是框架与外部通信的唯一抽象：
+
+```go
+type Transport interface {
+    Start(ctx context.Context) error
+    Close() error
+    Call(ctx context.Context, method string, params any, result any) error
+}
+```
+
+### 实现
+
+| 实现 | 底层 | 帧协议 |
+|------|------|--------|
+| `StdioTransport` | `mark3labs/mcp-go/transport.Stdio` | Content-Length |
+| `HTTPTransport` | `mark3labs/mcp-go/transport.StreamableHTTP` | HTTP |
+
+### 协议
+
+简化版 JSON-RPC 2.0，Gogent 自定义 method：
+
+```
+Request:  {"jsonrpc":"2.0","id":1,"method":"provider/generate","params":{...}}
+Response: {"jsonrpc":"2.0","id":1,"result":{...}}
+```
+
+握手（`initialize`）：
+
+```
+Client: {"jsonrpc":"2.0","method":"initialize","params":{"componentType":"provider","protocolVersion":"0.1.0"}}
+Server: {"jsonrpc":"2.0","result":{"protocolVersion":"0.1.0","componentType":"provider","methods":["provider/generate",...]}}
+```
+
+### LazyTransport
+
+包装任意 `Transport`，首次 `Call()` 时自动 `Start()`。所有 `Process*` 实现内部使用 `WrapLazy()`。
+
+### 组件方法映射
+
+| 业务接口方法 | 远程 method |
+|-------------|------------|
+| `IProvider.Generate()` | `provider/generate` |
+| `IProvider.ModelInfo()` | `provider/modelInfo` |
+| `ToolManager.Execute()` | `tools/call` |
+| `IMemory.Add()` | `memory/add` |
+| `IMemory.Query()` | `memory/query` |
+| `IMemory.Count()` | `memory/count` |
+| `IHook.OnEvent()` | `hook/onEvent` |
+| `IEventBus.Publish()` | `eventbus/publish` |
+| `IContextManager.NewSession()` | `context/newSession` |
+| `IContextManager.GetSummary()` | `context/getSummary` |
+| `IContextManager.BuildSystemPrompt()` | `context/buildSystemPrompt` |
+| `ISandbox.Create()` | `sandbox/create` |
+| `ISandbox.Execute()` | `sandbox/execute` |
 
 ## 子系统详解
 
-### IChannel（消息渠道）
-
-**职责**：用户消息接入
+### AgentCore
 
 **接口**：
+```go
+type IAgentCore interface {
+    Run(ctx context.Context, input Input) (Output, error)
+    Stream(ctx context.Context, input Input) (<-chan Event, error)
+    SetAgentRuntime(runtime *AgentRuntime)
+}
+```
+
+**AgentRuntime** 持有所有子系统引用：
+```
+Provider       provider.IProvider
+ToolManager    *tool.ToolManager
+HookManager    *hook.HookManager
+ContextManager contextmanager.IContextManager
+Memory         memory.IMemory
+EventBus       eventbus.IEventBus
+Sandbox        sandbox.ISandbox
+```
+
+全部从 Registry 在 `Initialize()` 时解析。
+
+### Provider
+
+```go
+type IProvider interface {
+    Generate(ctx context.Context, messages []ProviderMessage) (Response, error)
+    Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
+    ModelInfo() ModelInfo
+}
+```
+
+### Tool
+
+```go
+type ITool interface {
+    Info() ToolInfo
+    Execute(ctx context.Context, params map[string]any) (Result, error)
+}
+```
+
+`ToolManager` 是工具容器，同时是 `Component`，管理多个 `ITool` 实例的注册、查找和执行。
+
+### Hook
+
+```go
+type IHook interface {
+    OnEvent(ctx context.Context, event Event) (context.Context, error)
+    Events() []EventType
+}
+```
+
+`HookManager` 按 `EventType` 索引，`Trigger()` 按序调用匹配的 hook。
+
+### EventBus
+
+```go
+type IEventBus interface {
+    Publish(ctx context.Context, topic Topic, event Event) error
+    Subscribe(ctx context.Context, topic Topic) (Subscription, error)
+    Unsubscribe(sub Subscription) error
+}
+```
+
+### ContextManager
+
+```go
+type IContextManager interface {
+    NewSession() string
+    AddMessage(sessionId string, msg ContextMessage) error
+    GetMessages(sessionId string) []ContextMessage
+    GetSummary(sessionId string) (Summary, error)
+    BuildSystemPrompt(sessionId string) string
+    Clear(sessionId string) error
+    DeleteSession(sessionID string)
+}
+```
+
+### Memory
+
+```go
+type IMemory interface {
+    Add(ctx context.Context, item MemoryItem) error
+    AddBatch(ctx context.Context, items []MemoryItem) error
+    Query(ctx context.Context, q Query) ([]MemoryItem, error)
+    Get(ctx context.Context, id string) (MemoryItem, error)
+    Delete(ctx context.Context, id string) error
+    Clear(ctx context.Context) error
+    Count(ctx context.Context) (int64, error)
+}
+```
+
+### Sandbox
+
+```go
+type ISandbox interface {
+    Create(ctx context.Context) (string, error)
+    Destroy(ctx context.Context, id string) error
+    Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error)
+    SetLimits(limits ResourceLimits)
+    GetLimits() ResourceLimits
+}
+```
+
+### Channel
+
 ```go
 type IChannel interface {
     Name() string
@@ -90,244 +240,19 @@ type IChannel interface {
 }
 ```
 
-**实现**：
-- `NativeChannel`: 内存 IChannel，适合 CLI
-- `HttpChannel`: HTTP 轮询
-- `ProcessChannel`: MCP 协议
-
-### AgentCore（IAgentCore 核心）
-
-**职责**：IAgentCore 执行逻辑与协调
-
-**接口**：
-```go
-type IAgentCore interface {
-    Run(ctx context.Context, input Input) (Output, error)
-    Stream(ctx context.Context, input Input) (<-chan Event, error)
-}
-```
-
-**依赖**：
-- IProvider（必需）
-- ToolManager（可选）
-- HookManager（可选）
-- IContextManager（可选）
-- IMemory（可选）
-- IEventBus（可选）
-
-### IProvider（LLM 提供者）
-
-**职责**：与 LLM 交互
-
-**接口**：
-```go
-type IProvider interface {
-    Generate(ctx context.Context, messages []ProviderMessage) (Response, error)
-    Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
-    ModelInfo() ModelInfo
-}
-```
-
-### ITool（工具）
-
-**职责**：工具定义与执行
-
-**接口**：
-```go
-type ITool interface {
-    Info() ToolInfo
-    Execute(ctx context.Context, params map[string]any) (Result, error)
-    Stream(ctx context.Context, params map[string]any) (<-chan StreamChunk, error)
-}
-
-type ToolManager interface {
-    Register(tool ITool) error
-    Get(name string) ITool
-    List() []ToolInfo
-    Execute(ctx context.Context, name string, params map[string]any) (Result, error)
-}
-```
-
-### IHook（钩子）
-
-**职责**：生命周期拦截
-
-**事件类型**：
-- EventBeforeRun / EventAfterRun
-- EventBeforeTool / EventAfterTool
-- EventBeforeLLM / EventAfterLLM
-- EventError
-
-**接口**：
-```go
-type IHook interface {
-    OnEvent(ctx context.Context, event Event) (context.Context, error)
-    Events() []EventType
-}
-```
-
-### IEventBus（事件总线）
-
-**职责**：跨子系统异步消息
-
-**接口**：
-```go
-type IEventBus interface {
-    Publish(ctx context.Context, topic Topic, event Event) error
-    Subscribe(ctx context.Context, topic Topic) (Subscription, error)
-    Unsubscribe(sub Subscription) error
-}
-```
-
-### IContextManager（上下文管理）
-
-**职责**：对话与执行上下文
-
-**功能**：
-- 会话管理（多 session）
-- 消息历史
-- 变量存储
-- Summary 生成
-- System Prompt
-
-### IMemory（记忆）
-
-**职责**：长期记忆存储
-
-**接口**：
-```go
-type IMemory interface {
-    Add(ctx context.Context, item MemoryItem) error
-    Query(ctx context.Context, q Query) ([]MemoryItem, error)
-    Clear(ctx context.Context) error
-}
-```
-
-### ISandbox（沙箱）
-
-**职责**：安全执行环境
-
-**功能**：
-- 代码执行隔离
-- 资源限制（内存、CPU、时间）
-- 网络访问控制
-
 ## 扩展指南
 
 ### 新增子系统
 
-1. **创建目录**：`pkg/newsubsystem/`
-
-2. **定义接口**：`newsubsystem/types.go`
-```go
-type MyInterface interface {
-    DoSomething(ctx context.Context) error
-}
-```
-
-3. **实现 AgentRuntime**：`newsubsystem/component.go`
-```go
-type AgentRuntime struct {
-    name string
-    impl MyInterface
-}
-
-func (c *AgentRuntime) Name() string { return c.name }
-func (c *AgentRuntime) Type() component.ComponentType { return "newsubsystem" }
-func (c *AgentRuntime) Initialize(ctx context.Context, registry component.Dependencies) error { return nil }
-func (c *AgentRuntime) Start(ctx context.Context) error { return nil }
-func (c *AgentRuntime) Stop(ctx context.Context) error { return nil }
-func (c *AgentRuntime) Dependencies() map[string]component.DependencySpec { return nil }
-```
-
-4. **实现驱动**：
-   - `native.go`: Native 实现
-   - `http.go`: HTTP 实现
-   - `process.go`: MCP 实现
-
-5. **更新 Builder**：`pkg/app/builder.go`
-```go
-case "newsubsystem":
-    return b.buildNewSubsystem(cc)
-```
-
-6. **配置使用**：
-```yaml
-components:
-  - name: "my-subsystem"
-    type: "newsubsystem"
-    driver: "native"
-```
-
-### 横向扩展（预留）
-
-未来支持多实例和组合：
-
-```yaml
-components:
-  - name: "eventbus-primary"
-    type: "eventbus"
-    driver: "composite"
-    config:
-      instances: ["eventbus-mq", "eventbus-local"]
-      strategy: "failover"
-```
-
-**预留设计**：
-- `GetByType()` 返回数组
-- 组件名称唯一标识
-- 依赖支持指定名称
-
-## 通信协议
-
-### MCP 协议（Process 驱动）
-
-基于 JSON-RPC 2.0，通过 stdio 通信：
-
-```json
-{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search", "arguments": {}}}
-```
-
-### REST API（HTTP 驱动）
-
-统一 REST 风格：
-- `POST /generate` - LLM 生成
-- `POST /execute` - 工具执行
-- `POST /hook` - IHook 触发
-- `POST /publish/{topic}` - 事件发布
-
-## 安全考虑
-
-### ISandbox 隔离
-
-```go
-type ResourceLimits struct {
-    MaxMemoryMB   int
-    MaxCPUTime    time.Duration
-    MaxFileSize   int64
-    NetworkAccess bool
-}
-```
-
-### 环境变量
-
-配置支持 `${VAR}` 语法：
-```yaml
-config:
-  apiKey: "${OPENAI_API_KEY}"
-```
-
-## 性能优化建议
-
-1. **连接池**：HTTP 驱动复用 client
-2. **缓冲 IChannel**：消息队列设置合理 buffer
-3. **超时控制**：所有外部调用设置 timeout
-4. **拓扑排序**：依赖初始化顺序最优
+1. 创建 `pkg/newsubsystem/` → 定义业务接口 `types.go`
+2. 实现组件包装器 `component.go`（`GetName`/`GetType`/`Initialize`/`Start`/`Stop`/`Dependencies`）
+3. 实现三种驱动：`native.go`、`process.go`、`http.go`
+4. 在 `app/builder.go` `buildComponent` 中添加 `case` 分支
+5. 如需 AgentCore 依赖，在 `agentcore/component.go` 添加字段和解析逻辑
 
 ## 未来规划
 
-- [ ] Composite 组件（多实例组合）
-- [ ] 路由策略（failover、broadcast、sharding）
+- [ ] SDK 独立仓库（daemon/server 侧实现）
+- [ ] Composite 组件（多实例组合、failover）
 - [ ] 可观测性（metrics、tracing）
 - [ ] 动态配置更新
-- [ ] 插件系统（Go plugin）
