@@ -14,6 +14,7 @@ const (
 	ComponentContextManager ComponentType = "contextmanager"
 	ComponentMemory         ComponentType = "memory"
 	ComponentSandbox        ComponentType = "sandbox"
+	ComponentLogger         ComponentType = "logger"
 )
 
 type DependencySpec struct {

@@ -2,11 +2,13 @@ package agentcore
 
 import (
 	"context"
+	"time"
 
 	"github.com/tltre/gagent/pkg/component"
 	"github.com/tltre/gagent/pkg/contextmanager"
 	"github.com/tltre/gagent/pkg/eventbus"
 	"github.com/tltre/gagent/pkg/hook"
+	"github.com/tltre/gagent/pkg/logger"
 	"github.com/tltre/gagent/pkg/memory"
 	"github.com/tltre/gagent/pkg/provider"
 	"github.com/tltre/gagent/pkg/sandbox"
@@ -77,14 +79,21 @@ func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Regis
 		}
 	}
 	c.Agent.SetAgentRuntime(c)
+
+	c.publishLog(ctx, logger.InfoLevel, "dependencies resolved",
+		logger.Field{Key: "provider", Value: nameOrNil(c.Provider)},
+		logger.Field{Key: "tool", Value: nameOrNil(c.ToolManager)},
+	)
 	return nil
 }
 
 func (c *AgentRuntime) Start(ctx context.Context) error {
+	c.publishLog(ctx, logger.InfoLevel, "agent started")
 	return nil
 }
 
 func (c *AgentRuntime) Stop(ctx context.Context) error {
+	c.publishLog(ctx, logger.InfoLevel, "agent stopped")
 	return nil
 }
 
@@ -125,7 +134,29 @@ func (c *AgentRuntime) Run(ctx context.Context, input Input) (Output, error) {
 	if c.Agent == nil {
 		return Output{}, nil
 	}
-	return c.Agent.Run(ctx, input)
+	ctx = logger.WithTraceID(ctx)
+	c.publishLog(ctx, logger.DebugLevel, "run started",
+		logger.Field{Key: "messages", Value: len(input.Messages)},
+	)
+
+	start := time.Now()
+	output, err := c.Agent.Run(ctx, input)
+	dur := time.Since(start)
+
+	if err != nil {
+		c.publishLog(ctx, logger.ErrorLevel, "run failed",
+			logger.Field{Key: "error", Value: err.Error()},
+			logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
+		)
+		return output, err
+	}
+
+	traceID := logger.TraceIDFromContext(ctx)
+	c.publishLog(ctx, logger.InfoLevel, "run completed",
+		logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
+		logger.Field{Key: "traceId", Value: traceID},
+	)
+	return output, nil
 }
 
 func (c *AgentRuntime) Stream(ctx context.Context, input Input) (<-chan Event, error) {
@@ -175,4 +206,36 @@ func (c *AgentRuntime) SetSandbox(sb sandbox.ISandbox) *AgentRuntime {
 func (c *AgentRuntime) SetAgentCore(Agent IAgentCore) *AgentRuntime {
 	c.Agent = Agent
 	return c
+}
+
+func (c *AgentRuntime) publishLog(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
+	if c.EventBus == nil {
+		return
+	}
+	ev := logger.LogEvent{
+		TraceID: logger.TraceIDFromContext(ctx),
+		Entry: logger.LogEntry{
+			Timestamp: time.Now(),
+			Level:     level,
+			Module:    "agentcore",
+			Message:   msg,
+			Fields:    fields,
+		},
+	}
+	c.EventBus.Publish(ctx, "system.log", eventbus.Event{
+		Topic:   "system.log",
+		Key:     "agentcore",
+		Payload: ev,
+	})
+}
+
+func nameOrNil(v any) string {
+	if v == nil {
+		return "nil"
+	}
+	type named interface{ GetName() string }
+	if n, ok := v.(named); ok {
+		return n.GetName()
+	}
+	return "set"
 }

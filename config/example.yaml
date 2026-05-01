@@ -7,6 +7,15 @@ components:
     type: "eventbus"
     driver: "native"
 
+  # Logger - 日志组件
+  - name: "logger-main"
+    type: "logger"
+    driver: "native"
+    config:
+      level: "info"
+      format: "console"
+      output: "stderr"
+
   # Provider - LLM 提供者
   - name: "provider-openai"
     type: "provider"
@@ -81,6 +90,7 @@ components:
 
 defaults:
   eventbus: "eventbus-main"
+  logger: "logger-main"
   provider: "provider-openai"
   tool: "tools-main"
   hook: "hooks-main"

@@ -5,14 +5,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 )
 
 const ProtocolVersion = "0.1.0"
+
+type LogLevel int8
+
+const (
+	InfoLevel  LogLevel = 0
+	ErrorLevel LogLevel = 3
+)
+
+type Field struct {
+	Key   string
+	Value any
+}
+
+type LogEntry struct {
+	Level    LogLevel
+	Module   string
+	Message  string
+	Duration time.Duration
+	Fields   []Field
+}
+
+type Logger interface {
+	Log(ctx context.Context, entry LogEntry)
+}
 
 type Transport interface {
 	Start(ctx context.Context) error
 	Close() error
 	Call(ctx context.Context, method string, params any, result any) error
+	OnNotify(method string, handler func(params json.RawMessage))
 }
 
 type InitRequest struct {
@@ -72,4 +98,8 @@ func (t *LazyTransport) Call(ctx context.Context, method string, params any, res
 
 func (t *LazyTransport) Close() error {
 	return t.tr.Close()
+}
+
+func (t *LazyTransport) OnNotify(method string, handler func(params json.RawMessage)) {
+	t.tr.OnNotify(method, handler)
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/tltre/gagent/pkg/contextmanager"
 	"github.com/tltre/gagent/pkg/eventbus"
 	"github.com/tltre/gagent/pkg/hook"
+	"github.com/tltre/gagent/pkg/logger"
 	"github.com/tltre/gagent/pkg/memory"
 	"github.com/tltre/gagent/pkg/provider"
 	"github.com/tltre/gagent/pkg/sandbox"
@@ -102,6 +104,8 @@ func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error
 		return b.buildMemory(cc)
 	case "sandbox":
 		return b.buildSandbox(cc)
+	case "logger":
+		return b.buildLogger(cc)
 	default:
 		return nil, fmt.Errorf("unknown component type: %s", cc.Type)
 	}
@@ -362,12 +366,29 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 	}
 }
 
+func (b *Builder) buildLogger(cc ComponentConfig) (component.Component, error) {
+	cfg := logger.Config{
+		Level:  getString(cc.Config, "level"),
+		Format: getString(cc.Config, "format"),
+		Output: getString(cc.Config, "output"),
+	}
+	if cfg.Level == "" {
+		cfg.Level = "info"
+	}
+	if cfg.Format == "" {
+		cfg.Format = "console"
+	}
+	l := logger.NewZapLogger(cfg)
+	return logger.NewComponent(cc.Name, l), nil
+}
+
 func (b *Builder) newStdioTransport(cfgMap map[string]any, component string) *client.StdioTransport {
 	return client.NewStdioTransport(client.StdioTransportConfig{
 		Command:   getString(cfgMap, "command"),
 		Args:      getStringSlice(cfgMap, "args"),
 		Env:       getStringSlice(cfgMap, "env"),
 		Component: component,
+		Logger:    &transportLogAdapter{l: logger.Default()},
 	})
 }
 
@@ -376,6 +397,29 @@ func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *cli
 		Endpoint:  getString(cfgMap, "endpoint"),
 		Timeout:   getDuration(cfgMap, "timeout"),
 		Component: component,
+		Logger:    &transportLogAdapter{l: logger.Default()},
+	})
+}
+
+type transportLogAdapter struct {
+	l logger.Logger
+}
+
+func (a *transportLogAdapter) Log(ctx context.Context, entry client.LogEntry) {
+	fields := make([]logger.Field, len(entry.Fields))
+	for i, f := range entry.Fields {
+		fields[i] = logger.Field{Key: f.Key, Value: f.Value}
+	}
+	lvl := logger.InfoLevel
+	if entry.Level == client.ErrorLevel {
+		lvl = logger.ErrorLevel
+	}
+	a.l.Log(ctx, logger.LogEntry{
+		Level:    lvl,
+		Module:   entry.Module,
+		Message:  entry.Message,
+		Duration: entry.Duration,
+		Fields:   fields,
 	})
 }
 

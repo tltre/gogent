@@ -144,3 +144,38 @@ All resolved from registry during `Initialize()`, then injected via `c.Agent.Set
 4. **Native implementations are provided by users**: The framework does NOT ship native implementations. Native components are injected via `With*()` BuildOption functions. Stub natiive implementations (`NativeAgent`, `NativeProvider`, etc.) are for testing/demo only.
 
 5. **Process* implementations use LazyTransport**: transports are auto-started on first `Call()`, not during `Initialize()` or `Start()`. If adding a new process implementation, wrap the transport with `client.WrapLazy()`.
+
+## v0.2.0 Roadmap — Observability & Auxiliary Components
+
+### Phase 1: Logger Component Infrastructure
+
+- Add `go.uber.org/zap` dependency
+- `pkg/logger/logger.go` — `Logger` interface, `LogEntry`, `Field`, `Level`
+- `pkg/logger/zap.go` — `ZapLogger` wrapping `zap.Logger`; supports console (human-readable) and JSON formats
+- `pkg/logger/component.go` — `LoggerComponent` implements `component.Component`
+- Add `ComponentLogger` to `pkg/component/component.go`
+- AgentRuntime: add `Logger` field, resolve from Registry in `Initialize()`, fallback to `logger.Default()` (zap stderr)
+- YAML config supports `logger` component with `level`, `format` (json/console), `output`
+
+### Phase 2: Transport Bidirectional Notifications
+
+- Extend `Transport` interface with `OnNotify(method, handler)`
+- `StdioTransport` / `HTTPTransport` / `LazyTransport` implement `OnNotify`
+- Handshake extension: send `services/announce` notification after initialize
+- Route `logger/log` notifications to Logger, `eventbus/publish` to EventBus
+
+### Phase 3: Framework Instrumentation
+
+- Transport `Call()` logs method + duration + error via Logger
+- AgentRuntime `Initialize`/`Start`/`Run`/`Stop` emit structured log entries
+
+### Phase 4: Sandbox Security Fields
+
+- Extend `ResourceLimits` with `AllowedCommands` and `ReadOnlyRoot`
+- Builder parses new fields from YAML
+
+### Phase 5: Tests
+
+- Logger component unit tests
+- Transport notification round-trip tests (stdio + http)
+- Sandbox field validation
