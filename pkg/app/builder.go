@@ -114,12 +114,11 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 		ch := channel.NewNativeChannel(cc.Name, bufferSize)
 		return channel.NewComponent(cc.Name, ch), nil
 	case "http":
-		cfg := &channel.HttpChannelConfig{
-			Name:     cc.Name,
-			Endpoint: getString(cc.Config, "endpoint"),
-			Timeout:  getDuration(cc.Config, "timeout"),
-		}
-		ch := channel.NewHttpChannel(cfg)
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return channel.NewComponent(cc.Name, ch), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
@@ -137,6 +136,13 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 	switch cc.Driver {
 	case "native":
 		return agentcore.NewComponent(cc.Name, nil), nil
+	case "http":
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return agentcore.NewComponent(cc.Name, core), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
@@ -155,14 +161,11 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 		p := provider.NewNativeProvider(cc.Name)
 		return provider.NewComponent(cc.Name, p), nil
 	case "http":
-		cfg := &provider.HttpProviderConfig{
-			Name:     cc.Name,
-			Endpoint: getString(cc.Config, "endpoint"),
-			ApiKey:   getString(cc.Config, "apiKey"),
-			Model:    getString(cc.Config, "model"),
-			Timeout:  getDuration(cc.Config, "timeout"),
-		}
-		p := provider.NewHttpProvider(cfg)
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return provider.NewComponent(cc.Name, p), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
@@ -193,15 +196,16 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 							Description: desc,
 						}, nil)
 						comp.Register(toolImpl)
-					case "http":
-						cfg := &tool.HttpToolConfig{
+				case "http":
+						tr := b.newHTTPTransport(toolMap, "tool")
+						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
 							Description: desc,
-							Endpoint:    getString(toolMap, "endpoint"),
-						}
-						toolImpl := tool.NewHttpTool(cfg)
+							ToolName:    getString(toolMap, "toolName"),
+							Transport:   tr,
+						})
 						comp.Register(toolImpl)
-					case "process":
+				case "process":
 						tr := b.newStdioTransport(toolMap, "tool")
 						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
@@ -233,15 +237,15 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 					case "native":
 						hookImpl := hook.NewNativeHook(name, events, nil)
 						comp.Register(hookImpl)
-					case "http":
-						cfg := &hook.HttpHookConfig{
-							Name:     name,
-							Endpoint: getString(hookMap, "endpoint"),
-							Events:   events,
-						}
-						hookImpl := hook.NewHttpHook(cfg)
+				case "http":
+						tr := b.newHTTPTransport(hookMap, "hook")
+						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
+							Name:      name,
+							Events:    events,
+							Transport: tr,
+						})
 						comp.Register(hookImpl)
-					case "process":
+				case "process":
 						tr := b.newStdioTransport(hookMap, "hook")
 						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
 							Name:      name,
@@ -264,11 +268,11 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 		eb := eventbus.NewNativeEventBus()
 		return eventbus.NewComponent(cc.Name, eb), nil
 	case "http":
-		cfg := &eventbus.HttpEventBusConfig{
-			Name:     cc.Name,
-			Endpoint: getString(cc.Config, "endpoint"),
-		}
-		eb := eventbus.NewHttpEventBus(cfg)
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return eventbus.NewComponent(cc.Name, eb), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
@@ -287,7 +291,12 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 	case "native":
 		return contextmanager.NewComponent(cc.Name, nil), nil
 	case "http":
-		return contextmanager.NewComponent(cc.Name, nil), nil
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return contextmanager.NewComponent(cc.Name, cm), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
@@ -306,11 +315,11 @@ func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 		m := memory.NewNativeMemory()
 		return memory.NewComponent(cc.Name, m), nil
 	case "http":
-		cfg := &memory.HttpMemoryConfig{
-			Name:     cc.Name,
-			Endpoint: getString(cc.Config, "endpoint"),
-		}
-		m := memory.NewHttpMemory(cfg)
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return memory.NewComponent(cc.Name, m), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
@@ -335,11 +344,11 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 		s := sandbox.NewNativeSandbox(limits)
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	case "http":
-		cfg := &sandbox.HttpSandboxConfig{
-			Name:     cc.Name,
-			Endpoint: getString(cc.Config, "endpoint"),
-		}
-		s := sandbox.NewHttpSandbox(cfg, limits)
+		t := b.newHTTPTransport(cc.Config, cc.Type)
+		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	case "process":
 		t := b.newStdioTransport(cc.Config, cc.Type)
@@ -358,6 +367,14 @@ func (b *Builder) newStdioTransport(cfgMap map[string]any, component string) *cl
 		Command:   getString(cfgMap, "command"),
 		Args:      getStringSlice(cfgMap, "args"),
 		Env:       getStringSlice(cfgMap, "env"),
+		Component: component,
+	})
+}
+
+func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *client.HTTPTransport {
+	return client.NewHTTPTransport(client.HTTPTransportConfig{
+		Endpoint:  getString(cfgMap, "endpoint"),
+		Timeout:   getDuration(cfgMap, "timeout"),
 		Component: component,
 	})
 }
