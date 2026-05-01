@@ -24,9 +24,9 @@ type DependencySpec struct {
 }
 
 type Component interface {
-	Name() string
-	Type() ComponentType
-	Initialize(ctx context.Context, deps Dependencies) error
+	GetName() string
+	GetType() ComponentType
+	Initialize(ctx context.Context, deps *Registry) error
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 	Dependencies() map[string]DependencySpec

@@ -3,30 +3,22 @@ package tool
 import (
 	"context"
 
-	"github.com/yourorg/gagent/pkg/protocol/mcp"
+	"github.com/tltre/gagent/internal/client"
 )
 
 type ProcessToolConfig struct {
 	Name        string
 	Description string
-	Command     []string
 	ToolName    string
+	Transport   client.Transport
 }
 
 type ProcessTool struct {
 	config *ProcessToolConfig
-	client *mcp.Client
 }
 
-func NewProcessTool(cfg *ProcessToolConfig) (*ProcessTool, error) {
-	client, err := mcp.NewClient(cfg.Command...)
-	if err != nil {
-		return nil, err
-	}
-	return &ProcessTool{
-		config: cfg,
-		client: client,
-	}, nil
+func NewProcessTool(cfg *ProcessToolConfig) *ProcessTool {
+	return &ProcessTool{config: cfg}
 }
 
 func (t *ProcessTool) Info() ToolInfo {
@@ -37,16 +29,18 @@ func (t *ProcessTool) Info() ToolInfo {
 }
 
 func (t *ProcessTool) Execute(ctx context.Context, params map[string]any) (Result, error) {
-	resp, err := t.client.CallTool(ctx, t.config.ToolName, params)
-	if err != nil {
+	type callParams struct {
+		Name      string         `json:"name"`
+		Arguments map[string]any `json:"arguments"`
+	}
+	var result Result
+	if err := t.config.Transport.Call(ctx, "tools/call", callParams{
+		Name:      t.config.ToolName,
+		Arguments: params,
+	}, &result); err != nil {
 		return Result{IsError: true, ErrorMsg: err.Error()}, nil
 	}
-
-	if resp.IsError {
-		return Result{IsError: true, ErrorMsg: resp.Error}, nil
-	}
-
-	return Result{Output: resp.Content}, nil
+	return result, nil
 }
 
 func (t *ProcessTool) Stream(ctx context.Context, params map[string]any) (<-chan StreamChunk, error) {

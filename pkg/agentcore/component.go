@@ -3,77 +3,85 @@ package agentcore
 import (
 	"context"
 
-	"github.com/yourorg/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/contextmanager"
+	"github.com/tltre/gagent/pkg/eventbus"
+	"github.com/tltre/gagent/pkg/hook"
+	"github.com/tltre/gagent/pkg/memory"
+	"github.com/tltre/gagent/pkg/provider"
+	"github.com/tltre/gagent/pkg/tool"
 )
 
-type Component struct {
-	name        string
-	agent       Agent
-	provider    any
-	toolManager any
-	hookManager any
-	contextMgr  any
-	memory      any
-	eventBus    any
+type AgentRuntime struct {
+	Name           string
+	Agent          IAgentCore
+	Provider       provider.IProvider
+	ToolManager    *tool.ToolManager
+	HookManager    *hook.HookManager
+	ContextManager contextmanager.IContextManager
+	Memory         memory.IMemory
+	EventBus       eventbus.IEventBus
 }
 
-func NewComponent(name string) *Component {
-	return &Component{
-		name: name,
+func NewComponent(name string, agent IAgentCore) *AgentRuntime {
+	return &AgentRuntime{
+		Name:  name,
+		Agent: agent,
 	}
 }
 
-func (c *Component) Name() string {
-	return c.name
+func (c *AgentRuntime) GetName() string {
+	return c.Name
 }
 
-func (c *Component) Type() component.ComponentType {
+func (c *AgentRuntime) GetType() component.ComponentType {
 	return component.ComponentAgentCore
 }
 
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
-	if c.provider == nil {
-		if p := deps.GetDefault(component.ComponentProvider); p != nil {
-			c.provider = p
+func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Registry) error {
+	if c.Provider == nil {
+		if p, ok := registry.GetDefault(component.ComponentProvider).(provider.IProvider); ok && p != nil {
+			c.Provider = p
 		}
 	}
-	if c.toolManager == nil {
-		if tm := deps.GetDefault(component.ComponentTool); tm != nil {
-			c.toolManager = tm
+	if c.ToolManager == nil {
+		if tm, ok := registry.GetDefault(component.ComponentTool).(*tool.ToolManager); ok && tm != nil {
+			c.ToolManager = tm
 		}
 	}
-	if c.hookManager == nil {
-		if hm := deps.GetDefault(component.ComponentHook); hm != nil {
-			c.hookManager = hm
+	if c.HookManager == nil {
+		if hm, ok := registry.GetDefault(component.ComponentHook).(*hook.HookManager); ok && hm != nil {
+			c.HookManager = hm
 		}
 	}
-	if c.contextMgr == nil {
-		if cm := deps.GetDefault(component.ComponentContextManager); cm != nil {
-			c.contextMgr = cm
+	if c.ContextManager == nil {
+		if cm, ok := registry.GetDefault(component.ComponentContextManager).(contextmanager.IContextManager); ok && cm != nil {
+			c.ContextManager = cm
 		}
 	}
-	if c.memory == nil {
-		if m := deps.GetDefault(component.ComponentMemory); m != nil {
-			c.memory = m
+	if c.Memory == nil {
+		if m, ok := registry.GetDefault(component.ComponentMemory).(memory.IMemory); ok && m != nil {
+			c.Memory = m
 		}
 	}
-	if c.eventBus == nil {
-		if eb := deps.GetDefault(component.ComponentEventBus); eb != nil {
-			c.eventBus = eb
+	if c.EventBus == nil {
+		if eb, ok := registry.GetDefault(component.ComponentEventBus).(eventbus.IEventBus); ok && eb != nil {
+			c.EventBus = eb
 		}
 	}
+	c.Agent.SetAgentRuntime(c)
 	return nil
 }
 
-func (c *Component) Start(ctx context.Context) error {
+func (c *AgentRuntime) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Stop(ctx context.Context) error {
+func (c *AgentRuntime) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Dependencies() map[string]component.DependencySpec {
+func (c *AgentRuntime) Dependencies() map[string]component.DependencySpec {
 	return map[string]component.DependencySpec{
 		"provider": {
 			Type:     component.ComponentProvider,
@@ -83,7 +91,7 @@ func (c *Component) Dependencies() map[string]component.DependencySpec {
 			Type:     component.ComponentTool,
 			Required: false,
 		},
-		"hookManager": {
+		"HookManager": {
 			Type:     component.ComponentHook,
 			Required: false,
 		},
@@ -91,64 +99,64 @@ func (c *Component) Dependencies() map[string]component.DependencySpec {
 			Type:     component.ComponentContextManager,
 			Required: false,
 		},
-		"memory": {
+		"Memory": {
 			Type:     component.ComponentMemory,
 			Required: false,
 		},
-		"eventBus": {
+		"EventBus": {
 			Type:     component.ComponentEventBus,
 			Required: false,
 		},
 	}
 }
 
-func (c *Component) Run(ctx context.Context, input Input) (Output, error) {
-	if c.agent == nil {
+func (c *AgentRuntime) Run(ctx context.Context, input Input) (Output, error) {
+	if c.Agent == nil {
 		return Output{}, nil
 	}
-	return c.agent.Run(ctx, input)
+	return c.Agent.Run(ctx, input)
 }
 
-func (c *Component) Stream(ctx context.Context, input Input) (<-chan Event, error) {
-	if c.agent == nil {
+func (c *AgentRuntime) Stream(ctx context.Context, input Input) (<-chan Event, error) {
+	if c.Agent == nil {
 		ch := make(chan Event)
 		close(ch)
 		return ch, nil
 	}
-	return c.agent.Stream(ctx, input)
+	return c.Agent.Stream(ctx, input)
 }
 
-func (c *Component) SetProvider(provider any) *Component {
-	c.provider = provider
+func (c *AgentRuntime) SetProvider(provider provider.IProvider) *AgentRuntime {
+	c.Provider = provider
 	return c
 }
 
-func (c *Component) SetToolManager(toolManager any) *Component {
-	c.toolManager = toolManager
+func (c *AgentRuntime) SetToolManager(toolManager *tool.ToolManager) *AgentRuntime {
+	c.ToolManager = toolManager
 	return c
 }
 
-func (c *Component) SetHookManager(hookManager any) *Component {
-	c.hookManager = hookManager
+func (c *AgentRuntime) SetHookManager(hookManager *hook.HookManager) *AgentRuntime {
+	c.HookManager = hookManager
 	return c
 }
 
-func (c *Component) SetContextManager(contextManager any) *Component {
-	c.contextMgr = contextManager
+func (c *AgentRuntime) SetContextManager(contextManager contextmanager.IContextManager) *AgentRuntime {
+	c.ContextManager = contextManager
 	return c
 }
 
-func (c *Component) SetMemory(memory any) *Component {
-	c.memory = memory
+func (c *AgentRuntime) SetMemory(memory memory.IMemory) *AgentRuntime {
+	c.Memory = memory
 	return c
 }
 
-func (c *Component) SetEventBus(eventBus any) *Component {
-	c.eventBus = eventBus
+func (c *AgentRuntime) SetEventBus(eventBus eventbus.IEventBus) *AgentRuntime {
+	c.EventBus = eventBus
 	return c
 }
 
-func (c *Component) SetAgent(agent Agent) *Component {
-	c.agent = agent
+func (c *AgentRuntime) SetAgentCore(Agent IAgentCore) *AgentRuntime {
+	c.Agent = Agent
 	return c
 }

@@ -30,7 +30,8 @@ type ExecResult struct {
 	Duration time.Duration
 }
 
-type Sandbox interface {
+// ISandbox 为扩展功能，建议在 v0.2.x中实现
+type ISandbox interface {
 	Create(ctx context.Context) (string, error)
 	Destroy(ctx context.Context, id string) error
 	Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error)

@@ -2,19 +2,19 @@
 
 ## 概述
 
-Gogent 是一个基于 Go 语言的 Agent 基础设施框架，采用模块化组件架构，支持多种驱动方式（Native、HTTP、Process），可快速构建可扩展的 Agent 应用。
+Gogent 是一个基于 Go 语言的 IAgentCore 基础设施框架，采用模块化组件架构，支持多种驱动方式（Native、HTTP、Process），可快速构建可扩展的 IAgentCore 应用。
 
 ## 核心设计原则
 
 ### 1. 组件化架构
 
-所有子系统统一实现 `Component` 接口：
+所有子系统统一实现 `AgentRuntime` 接口：
 
 ```go
-type Component interface {
+type AgentRuntime interface {
     Name() string
     Type() ComponentType
-    Initialize(ctx context.Context, deps Dependencies) error
+    Initialize(ctx context.Context, registry Dependencies) error
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
     Dependencies() map[string]DependencySpec
@@ -47,9 +47,9 @@ type Component interface {
 
 ```go
 type Dependencies interface {
-    Get(name string) Component
-    GetByType(typ ComponentType) []Component
-    GetDefault(typ ComponentType) Component
+    Get(name string) AgentRuntime
+    GetByType(typ ComponentType) []AgentRuntime
+    GetDefault(typ ComponentType) AgentRuntime
 }
 ```
 
@@ -75,13 +75,13 @@ components:
 
 ## 子系统详解
 
-### Channel（消息渠道）
+### IChannel（消息渠道）
 
 **职责**：用户消息接入
 
 **接口**：
 ```go
-type Channel interface {
+type IChannel interface {
     Name() string
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
@@ -91,64 +91,64 @@ type Channel interface {
 ```
 
 **实现**：
-- `NativeChannel`: 内存 Channel，适合 CLI
+- `NativeChannel`: 内存 IChannel，适合 CLI
 - `HttpChannel`: HTTP 轮询
 - `ProcessChannel`: MCP 协议
 
-### AgentCore（Agent 核心）
+### AgentCore（IAgentCore 核心）
 
-**职责**：Agent 执行逻辑与协调
+**职责**：IAgentCore 执行逻辑与协调
 
 **接口**：
 ```go
-type Agent interface {
+type IAgentCore interface {
     Run(ctx context.Context, input Input) (Output, error)
     Stream(ctx context.Context, input Input) (<-chan Event, error)
 }
 ```
 
 **依赖**：
-- Provider（必需）
+- IProvider（必需）
 - ToolManager（可选）
 - HookManager（可选）
-- ContextManager（可选）
-- Memory（可选）
-- EventBus（可选）
+- IContextManager（可选）
+- IMemory（可选）
+- IEventBus（可选）
 
-### Provider（LLM 提供者）
+### IProvider（LLM 提供者）
 
 **职责**：与 LLM 交互
 
 **接口**：
 ```go
-type Provider interface {
+type IProvider interface {
     Generate(ctx context.Context, messages []ProviderMessage) (Response, error)
     Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
     ModelInfo() ModelInfo
 }
 ```
 
-### Tool（工具）
+### ITool（工具）
 
 **职责**：工具定义与执行
 
 **接口**：
 ```go
-type Tool interface {
+type ITool interface {
     Info() ToolInfo
     Execute(ctx context.Context, params map[string]any) (Result, error)
     Stream(ctx context.Context, params map[string]any) (<-chan StreamChunk, error)
 }
 
 type ToolManager interface {
-    Register(tool Tool) error
-    Get(name string) Tool
+    Register(tool ITool) error
+    Get(name string) ITool
     List() []ToolInfo
     Execute(ctx context.Context, name string, params map[string]any) (Result, error)
 }
 ```
 
-### Hook（钩子）
+### IHook（钩子）
 
 **职责**：生命周期拦截
 
@@ -160,26 +160,26 @@ type ToolManager interface {
 
 **接口**：
 ```go
-type Hook interface {
+type IHook interface {
     OnEvent(ctx context.Context, event Event) (context.Context, error)
     Events() []EventType
 }
 ```
 
-### EventBus（事件总线）
+### IEventBus（事件总线）
 
 **职责**：跨子系统异步消息
 
 **接口**：
 ```go
-type EventBus interface {
+type IEventBus interface {
     Publish(ctx context.Context, topic Topic, event Event) error
     Subscribe(ctx context.Context, topic Topic) (Subscription, error)
     Unsubscribe(sub Subscription) error
 }
 ```
 
-### ContextManager（上下文管理）
+### IContextManager（上下文管理）
 
 **职责**：对话与执行上下文
 
@@ -190,20 +190,20 @@ type EventBus interface {
 - Summary 生成
 - System Prompt
 
-### Memory（记忆）
+### IMemory（记忆）
 
 **职责**：长期记忆存储
 
 **接口**：
 ```go
-type Memory interface {
+type IMemory interface {
     Add(ctx context.Context, item MemoryItem) error
     Query(ctx context.Context, q Query) ([]MemoryItem, error)
     Clear(ctx context.Context) error
 }
 ```
 
-### Sandbox（沙箱）
+### ISandbox（沙箱）
 
 **职责**：安全执行环境
 
@@ -225,19 +225,19 @@ type MyInterface interface {
 }
 ```
 
-3. **实现 Component**：`newsubsystem/component.go`
+3. **实现 AgentRuntime**：`newsubsystem/component.go`
 ```go
-type Component struct {
+type AgentRuntime struct {
     name string
     impl MyInterface
 }
 
-func (c *Component) Name() string { return c.name }
-func (c *Component) Type() component.ComponentType { return "newsubsystem" }
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error { return nil }
-func (c *Component) Start(ctx context.Context) error { return nil }
-func (c *Component) Stop(ctx context.Context) error { return nil }
-func (c *Component) Dependencies() map[string]component.DependencySpec { return nil }
+func (c *AgentRuntime) Name() string { return c.name }
+func (c *AgentRuntime) Type() component.ComponentType { return "newsubsystem" }
+func (c *AgentRuntime) Initialize(ctx context.Context, registry component.Dependencies) error { return nil }
+func (c *AgentRuntime) Start(ctx context.Context) error { return nil }
+func (c *AgentRuntime) Stop(ctx context.Context) error { return nil }
+func (c *AgentRuntime) Dependencies() map[string]component.DependencySpec { return nil }
 ```
 
 4. **实现驱动**：
@@ -293,12 +293,12 @@ components:
 统一 REST 风格：
 - `POST /generate` - LLM 生成
 - `POST /execute` - 工具执行
-- `POST /hook` - Hook 触发
+- `POST /hook` - IHook 触发
 - `POST /publish/{topic}` - 事件发布
 
 ## 安全考虑
 
-### Sandbox 隔离
+### ISandbox 隔离
 
 ```go
 type ResourceLimits struct {
@@ -320,7 +320,7 @@ config:
 ## 性能优化建议
 
 1. **连接池**：HTTP 驱动复用 client
-2. **缓冲 Channel**：消息队列设置合理 buffer
+2. **缓冲 IChannel**：消息队列设置合理 buffer
 3. **超时控制**：所有外部调用设置 timeout
 4. **拓扑排序**：依赖初始化顺序最优
 

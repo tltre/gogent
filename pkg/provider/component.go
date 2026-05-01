@@ -3,53 +3,53 @@ package provider
 import (
 	"context"
 
-	"github.com/yourorg/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/component"
 )
 
-type Component struct {
+type ProviderComponent struct {
 	name     string
-	provider Provider
+	provider IProvider
 }
 
-func NewComponent(name string, provider Provider) *Component {
-	return &Component{
+func NewComponent(name string, provider IProvider) *ProviderComponent {
+	return &ProviderComponent{
 		name:     name,
 		provider: provider,
 	}
 }
 
-func (c *Component) Name() string {
+func (c *ProviderComponent) GetName() string {
 	return c.name
 }
 
-func (c *Component) Type() component.ComponentType {
+func (c *ProviderComponent) GetType() component.ComponentType {
 	return component.ComponentProvider
 }
 
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
+func (c *ProviderComponent) Initialize(ctx context.Context, deps *component.Registry) error {
 	return nil
 }
 
-func (c *Component) Start(ctx context.Context) error {
+func (c *ProviderComponent) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Stop(ctx context.Context) error {
+func (c *ProviderComponent) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Dependencies() map[string]component.DependencySpec {
+func (c *ProviderComponent) Dependencies() map[string]component.DependencySpec {
 	return nil
 }
 
-func (c *Component) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
+func (c *ProviderComponent) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
 	return c.provider.Generate(ctx, messages)
 }
 
-func (c *Component) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
+func (c *ProviderComponent) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
 	return c.provider.Stream(ctx, messages)
 }
 
-func (c *Component) ModelInfo() ModelInfo {
+func (c *ProviderComponent) ModelInfo() ModelInfo {
 	return c.provider.ModelInfo()
 }

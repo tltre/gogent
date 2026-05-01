@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourorg/gagent/pkg/app"
-	"github.com/yourorg/gagent/pkg/tool"
+	"github.com/tltre/gagent/pkg/app"
+	"github.com/tltre/gagent/pkg/tool"
 )
 
 func main() {

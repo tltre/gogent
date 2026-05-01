@@ -3,38 +3,28 @@ package channel
 import (
 	"context"
 
-	"github.com/yourorg/gagent/pkg/protocol/mcp"
+	"github.com/tltre/gagent/internal/client"
 )
 
-type ProcessChannel struct {
-	name     string
-	client   *mcp.Client
-	msgChan  chan Message
-	stopChan chan struct{}
-}
-
 type ProcessChannelConfig struct {
-	Name       string
-	Command    []string
-	BufferSize int
+	Name      string
+	Transport client.Transport
 }
 
-func NewProcessChannel(cfg *ProcessChannelConfig) (*ProcessChannel, error) {
-	if cfg.BufferSize == 0 {
-		cfg.BufferSize = 100
-	}
+type ProcessChannel struct {
+	name      string
+	transport client.Transport
+	msgChan   chan Message
+	stopChan  chan struct{}
+}
 
-	client, err := mcp.NewClient(cfg.Command...)
-	if err != nil {
-		return nil, err
-	}
-
+func NewProcessChannel(cfg *ProcessChannelConfig) *ProcessChannel {
 	return &ProcessChannel{
-		name:     cfg.Name,
-		client:   client,
-		msgChan:  make(chan Message, cfg.BufferSize),
-		stopChan: make(chan struct{}),
-	}, nil
+		name:      cfg.Name,
+		transport: cfg.Transport,
+		msgChan:   make(chan Message, 100),
+		stopChan:  make(chan struct{}),
+	}
 }
 
 func (c *ProcessChannel) Name() string {
@@ -42,12 +32,12 @@ func (c *ProcessChannel) Name() string {
 }
 
 func (c *ProcessChannel) Start(ctx context.Context) error {
-	return c.client.Start(ctx)
+	return c.transport.Start(ctx)
 }
 
 func (c *ProcessChannel) Stop(ctx context.Context) error {
 	close(c.stopChan)
-	return c.client.Stop(ctx)
+	return c.transport.Close()
 }
 
 func (c *ProcessChannel) Receive(ctx context.Context) (<-chan Message, error) {
@@ -55,14 +45,5 @@ func (c *ProcessChannel) Receive(ctx context.Context) (<-chan Message, error) {
 }
 
 func (c *ProcessChannel) Send(ctx context.Context, msg Message) error {
-	params := map[string]any{
-		"id":        msg.ID,
-		"sessionId": msg.SessionID,
-		"type":      msg.Type,
-		"content":   msg.Content,
-		"metadata":  msg.Metadata,
-	}
-
-	_, err := c.client.CallTool(ctx, "send_message", params)
-	return err
+	return c.transport.Call(ctx, "channel/send", msg, nil)
 }

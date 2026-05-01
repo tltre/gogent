@@ -22,13 +22,13 @@ type Event struct {
 	Error   error
 }
 
-type Hook interface {
+type IHook interface {
 	OnEvent(ctx context.Context, event Event) (context.Context, error)
 	Events() []EventType
 }
 
-type HookManager interface {
-	Register(hook Hook) error
-	Trigger(ctx context.Context, event Event) (context.Context, error)
-	GetHooks(eventType EventType) []Hook
-}
+//type HookManager interface {
+//	Register(hook IHook) error
+//	Trigger(ctx context.Context, event Event) (context.Context, error)
+//	GetHooks(eventType EventType) []IHook
+//}

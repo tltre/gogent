@@ -4,16 +4,16 @@ import (
 	"context"
 	"sync"
 
-	"github.com/yourorg/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/component"
 )
 
 type Component struct {
 	name    string
-	sandbox Sandbox
+	sandbox ISandbox
 	limits  ResourceLimits
 }
 
-func NewComponent(name string, sandbox Sandbox, limits ResourceLimits) *Component {
+func NewComponent(name string, sandbox ISandbox, limits ResourceLimits) *Component {
 	return &Component{
 		name:    name,
 		sandbox: sandbox,
@@ -21,15 +21,15 @@ func NewComponent(name string, sandbox Sandbox, limits ResourceLimits) *Componen
 	}
 }
 
-func (c *Component) Name() string {
+func (c *Component) GetName() string {
 	return c.name
 }
 
-func (c *Component) Type() component.ComponentType {
+func (c *Component) GetType() component.ComponentType {
 	return component.ComponentSandbox
 }
 
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
+func (c *Component) Initialize(ctx context.Context, deps *component.Registry) error {
 	c.sandbox.SetLimits(c.limits)
 	return nil
 }

@@ -4,89 +4,63 @@ import (
 	"context"
 	"sync"
 
-	"github.com/yourorg/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/component"
 )
 
-type Component struct {
-	name    string
-	manager *Manager
+type HookManager struct {
+	name   string
+	mu     sync.RWMutex
+	hooks  []IHook
+	byType map[EventType][]IHook
 }
 
-func NewComponent(name string) *Component {
-	return &Component{
-		name:    name,
-		manager: NewManager(),
+func NewComponent(name string) *HookManager {
+	return &HookManager{
+		name:   name,
+		hooks:  make([]IHook, 0),
+		byType: make(map[EventType][]IHook),
 	}
 }
 
-func (c *Component) Name() string {
-	return c.name
+func (hm *HookManager) GetName() string {
+	return hm.name
 }
 
-func (c *Component) Type() component.ComponentType {
+func (hm *HookManager) GetType() component.ComponentType {
 	return component.ComponentHook
 }
 
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
+func (hm *HookManager) Initialize(ctx context.Context, deps *component.Registry) error {
 	return nil
 }
 
-func (c *Component) Start(ctx context.Context) error {
+func (hm *HookManager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Stop(ctx context.Context) error {
+func (hm *HookManager) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *Component) Dependencies() map[string]component.DependencySpec {
+func (hm *HookManager) Dependencies() map[string]component.DependencySpec {
 	return nil
 }
 
-func (c *Component) Manager() *Manager {
-	return c.manager
-}
+func (hm *HookManager) Register(hook IHook) error {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
 
-func (c *Component) Register(hook Hook) error {
-	return c.manager.Register(hook)
-}
-
-func (c *Component) Trigger(ctx context.Context, event Event) (context.Context, error) {
-	return c.manager.Trigger(ctx, event)
-}
-
-func (c *Component) GetHooks(eventType EventType) []Hook {
-	return c.manager.GetHooks(eventType)
-}
-
-type Manager struct {
-	mu     sync.RWMutex
-	hooks  []Hook
-	byType map[EventType][]Hook
-}
-
-func NewManager() *Manager {
-	return &Manager{
-		hooks:  make([]Hook, 0),
-		byType: make(map[EventType][]Hook),
-	}
-}
-
-func (m *Manager) Register(hook Hook) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.hooks = append(m.hooks, hook)
+	hm.hooks = append(hm.hooks, hook)
 	for _, eventType := range hook.Events() {
-		m.byType[eventType] = append(m.byType[eventType], hook)
+		hm.byType[eventType] = append(hm.byType[eventType], hook)
 	}
 	return nil
 }
 
-func (m *Manager) Trigger(ctx context.Context, event Event) (context.Context, error) {
-	m.mu.RLock()
-	hooks := m.byType[event.Type]
-	m.mu.RUnlock()
+func (hm *HookManager) Trigger(ctx context.Context, event Event) (context.Context, error) {
+	hm.mu.RLock()
+	hooks := hm.byType[event.Type]
+	hm.mu.RUnlock()
 
 	for _, hook := range hooks {
 		newCtx, err := hook.OnEvent(ctx, event)
@@ -98,8 +72,8 @@ func (m *Manager) Trigger(ctx context.Context, event Event) (context.Context, er
 	return ctx, nil
 }
 
-func (m *Manager) GetHooks(eventType EventType) []Hook {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.byType[eventType]
+func (hm *HookManager) GetHooks(eventType EventType) []IHook {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+	return hm.byType[eventType]
 }

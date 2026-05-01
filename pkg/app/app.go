@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yourorg/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/component"
 )
 
 type App struct {

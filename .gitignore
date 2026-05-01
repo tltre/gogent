@@ -1,0 +1,24 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# opencode
+.opencode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.out
+*.test
+vendor/
+
+# Env
+.env
+.env.local
+*.log

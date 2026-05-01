@@ -15,7 +15,7 @@ type Subscription interface {
 	Close() error
 }
 
-type EventBus interface {
+type IEventBus interface {
 	Publish(ctx context.Context, topic Topic, event Event) error
 	Subscribe(ctx context.Context, topic Topic) (Subscription, error)
 	Unsubscribe(sub Subscription) error

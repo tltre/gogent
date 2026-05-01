@@ -3,57 +3,7 @@ package eventbus
 import (
 	"context"
 	"sync"
-
-	"github.com/yourorg/gagent/pkg/component"
 )
-
-type Component struct {
-	name     string
-	eventBus EventBus
-}
-
-func NewComponent(name string, eventBus EventBus) *Component {
-	return &Component{
-		name:     name,
-		eventBus: eventBus,
-	}
-}
-
-func (c *Component) Name() string {
-	return c.name
-}
-
-func (c *Component) Type() component.ComponentType {
-	return component.ComponentEventBus
-}
-
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
-	return nil
-}
-
-func (c *Component) Start(ctx context.Context) error {
-	return nil
-}
-
-func (c *Component) Stop(ctx context.Context) error {
-	return nil
-}
-
-func (c *Component) Dependencies() map[string]component.DependencySpec {
-	return nil
-}
-
-func (c *Component) Publish(ctx context.Context, topic Topic, event Event) error {
-	return c.eventBus.Publish(ctx, topic, event)
-}
-
-func (c *Component) Subscribe(ctx context.Context, topic Topic) (Subscription, error) {
-	return c.eventBus.Subscribe(ctx, topic)
-}
-
-func (c *Component) Unsubscribe(sub Subscription) error {
-	return c.eventBus.Unsubscribe(sub)
-}
 
 type NativeEventBus struct {
 	mu          sync.RWMutex

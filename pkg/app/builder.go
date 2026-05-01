@@ -1,20 +1,22 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/yourorg/gagent/pkg/agentcore"
-	"github.com/yourorg/gagent/pkg/channel"
-	"github.com/yourorg/gagent/pkg/component"
-	"github.com/yourorg/gagent/pkg/contextmanager"
-	"github.com/yourorg/gagent/pkg/eventbus"
-	"github.com/yourorg/gagent/pkg/hook"
-	"github.com/yourorg/gagent/pkg/memory"
-	"github.com/yourorg/gagent/pkg/provider"
-	"github.com/yourorg/gagent/pkg/sandbox"
-	"github.com/yourorg/gagent/pkg/tool"
+	"github.com/tltre/gagent/internal/client"
+	"github.com/tltre/gagent/pkg/agentcore"
+	"github.com/tltre/gagent/pkg/channel"
+	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/contextmanager"
+	"github.com/tltre/gagent/pkg/eventbus"
+	"github.com/tltre/gagent/pkg/hook"
+	"github.com/tltre/gagent/pkg/memory"
+	"github.com/tltre/gagent/pkg/provider"
+	"github.com/tltre/gagent/pkg/sandbox"
+	"github.com/tltre/gagent/pkg/tool"
 )
 
 type Builder struct {
@@ -50,7 +52,7 @@ func (b *Builder) Registry() *component.Registry {
 	return b.registry
 }
 
-func (b *Builder) Build() (*App, error) {
+func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 	for _, cc := range b.config.Components {
 		comp, err := b.buildComponent(cc)
 		if err != nil {
@@ -65,6 +67,12 @@ func (b *Builder) Build() (*App, error) {
 		compType := component.ComponentType(typ)
 		if err := b.registry.SetDefault(compType, name); err != nil {
 			return nil, fmt.Errorf("set default for %s: %w", typ, err)
+		}
+	}
+
+	for _, opt := range opts {
+		if err := opt(b); err != nil {
+			return nil, fmt.Errorf("apply build option: %w", err)
 		}
 	}
 
@@ -113,13 +121,32 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 		}
 		ch := channel.NewHttpChannel(cfg)
 		return channel.NewComponent(cc.Name, ch), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return channel.NewComponent(cc.Name, ch), nil
 	default:
 		return nil, fmt.Errorf("unknown channel driver: %s", cc.Driver)
 	}
 }
 
 func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error) {
-	return agentcore.NewComponent(cc.Name), nil
+	switch cc.Driver {
+	case "native":
+		return agentcore.NewComponent(cc.Name, nil), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return agentcore.NewComponent(cc.Name, core), nil
+	default:
+		return nil, fmt.Errorf("unknown agentcore driver: %s", cc.Driver)
+	}
 }
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
@@ -136,6 +163,13 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 			Timeout:  getDuration(cc.Config, "timeout"),
 		}
 		p := provider.NewHttpProvider(cfg)
+		return provider.NewComponent(cc.Name, p), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return provider.NewComponent(cc.Name, p), nil
 	default:
 		return nil, fmt.Errorf("unknown provider driver: %s", cc.Driver)
@@ -166,6 +200,15 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 							Endpoint:    getString(toolMap, "endpoint"),
 						}
 						toolImpl := tool.NewHttpTool(cfg)
+						comp.Register(toolImpl)
+					case "process":
+						tr := b.newStdioTransport(toolMap, "tool")
+						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
+							Name:        name,
+							Description: desc,
+							ToolName:    getString(toolMap, "toolName"),
+							Transport:   tr,
+						})
 						comp.Register(toolImpl)
 					}
 				}
@@ -198,6 +241,14 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 						}
 						hookImpl := hook.NewHttpHook(cfg)
 						comp.Register(hookImpl)
+					case "process":
+						tr := b.newStdioTransport(hookMap, "hook")
+						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
+							Name:      name,
+							Events:    events,
+							Transport: tr,
+						})
+						comp.Register(hookImpl)
 					}
 				}
 			}
@@ -219,6 +270,13 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 		}
 		eb := eventbus.NewHttpEventBus(cfg)
 		return eventbus.NewComponent(cc.Name, eb), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return eventbus.NewComponent(cc.Name, eb), nil
 	default:
 		return nil, fmt.Errorf("unknown eventbus driver: %s", cc.Driver)
 	}
@@ -227,9 +285,16 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
 	case "native":
-		return contextmanager.NewComponent(cc.Name), nil
+		return contextmanager.NewComponent(cc.Name, nil), nil
 	case "http":
-		return contextmanager.NewComponent(cc.Name), nil
+		return contextmanager.NewComponent(cc.Name, nil), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
 		return nil, fmt.Errorf("unknown contextmanager driver: %s", cc.Driver)
 	}
@@ -246,6 +311,13 @@ func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 			Endpoint: getString(cc.Config, "endpoint"),
 		}
 		m := memory.NewHttpMemory(cfg)
+		return memory.NewComponent(cc.Name, m), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
 		return memory.NewComponent(cc.Name, m), nil
 	default:
 		return nil, fmt.Errorf("unknown memory driver: %s", cc.Driver)
@@ -269,8 +341,80 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 		}
 		s := sandbox.NewHttpSandbox(cfg, limits)
 		return sandbox.NewComponent(cc.Name, s, limits), nil
+	case "process":
+		t := b.newStdioTransport(cc.Config, cc.Type)
+		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
+			Name:      cc.Name,
+			Transport: t,
+		})
+		return sandbox.NewComponent(cc.Name, s, limits), nil
 	default:
 		return nil, fmt.Errorf("unknown sandbox driver: %s", cc.Driver)
+	}
+}
+
+func (b *Builder) newStdioTransport(cfgMap map[string]any, component string) *client.StdioTransport {
+	return client.NewStdioTransport(client.StdioTransportConfig{
+		Command:   getString(cfgMap, "command"),
+		Args:      getStringSlice(cfgMap, "args"),
+		Env:       getStringSlice(cfgMap, "env"),
+		Component: component,
+	})
+}
+
+type BuildOption func(*Builder) error
+
+func WithAgentCore(name string, core agentcore.IAgentCore) BuildOption {
+	comp := agentcore.NewComponent(name, core)
+	return WithComponent(comp)
+}
+
+func WithProvider(name string, p provider.IProvider) BuildOption {
+	comp := provider.NewComponent(name, p)
+	return WithComponent(comp)
+}
+
+func WithEventBus(name string, eb eventbus.IEventBus) BuildOption {
+	comp := eventbus.NewComponent(name, eb)
+	return WithComponent(comp)
+}
+
+func WithContextManager(name string, cm contextmanager.IContextManager) BuildOption {
+	comp := contextmanager.NewComponent(name, cm)
+	return WithComponent(comp)
+}
+
+func WithMemory(name string, m memory.IMemory) BuildOption {
+	comp := memory.NewComponent(name, m)
+	return WithComponent(comp)
+}
+
+func WithHooks(hooks ...hook.IHook) BuildOption {
+	// TODO
+	return nil
+}
+
+func WithTools(tools ...tool.ITool) BuildOption {
+	// TODO
+	return nil
+}
+
+func WithChannels(channels ...channel.IChannel) BuildOption {
+	// TODO
+	return nil
+}
+
+func WithComponent(comp component.Component) BuildOption {
+	return func(b *Builder) error {
+		if err := b.registry.Unregister(comp.GetName()); err != nil && !errors.Is(err, component.ErrComponentNotFound) {
+			return err
+		}
+
+		if err := b.registry.Register(comp); err != nil && !errors.Is(err, component.ErrComponentAlreadyExists) {
+			return err
+		}
+
+		return b.registry.SetDefault(comp.GetType(), comp.GetName())
 	}
 }
 
@@ -311,6 +455,21 @@ func getDuration(m map[string]any, key string) time.Duration {
 		}
 	}
 	return 0
+}
+
+func getStringSlice(m map[string]any, key string) []string {
+	if v, ok := m[key]; ok {
+		if list, ok := v.([]any); ok {
+			result := make([]string, 0, len(list))
+			for _, item := range list {
+				if s, ok := item.(string); ok {
+					result = append(result, s)
+				}
+			}
+			return result
+		}
+	}
+	return nil
 }
 
 func getEvents(m map[string]any, key string) []hook.EventType {

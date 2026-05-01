@@ -1,6 +1,6 @@
-# Gogent - Go Agent Infrastructure
+# Gogent - Go IAgentCore Infrastructure
 
-基于 Go 语言的 Agent 基础设施框架，提供模块化、可扩展的 Agent 构建能力。
+基于 Go 语言的 IAgentCore 基础设施框架，提供模块化、可扩展的 IAgentCore 构建能力。
 
 ## 特性
 
@@ -15,13 +15,13 @@
 | 子系统 | 职责 | 驱动支持 |
 |--------|------|----------|
 | channel | 用户消息接入渠道 | native, http, process |
-| agentcore | Agent 执行逻辑与协调 | native, http |
+| agentcore | IAgentCore 执行逻辑与协调 | native, http |
 | provider | LLM 提供者交互 | native, http |
 | tool | 工具定义与管理 | native, http, process |
 | hook | 钩子拦截与管理 | native, http, process |
 | eventbus | 跨子系统异步消息 | native, http |
 | contextmanager | 对话与执行上下文 | native, http |
-| memory | 长期记忆存储 | native, http |
+| IMemory | 长期记忆存储 | native, http |
 | sandbox | 安全沙箱执行 | native, http |
 
 ## 快速开始
@@ -69,7 +69,7 @@ name: my-agent
 version: "1.0.0"
 
 components:
-  # LLM Provider
+  # LLM IProvider
   - name: "provider-openai"
     type: "provider"
     driver: "http"
@@ -78,7 +78,7 @@ components:
       apiKey: "${OPENAI_API_KEY}"
       model: "gpt-4"
 
-  # Tool Manager
+  # ITool ChannelManager
   - name: "tools-main"
     type: "tool"
     driver: "native"
@@ -88,7 +88,7 @@ components:
           description: "Calculate expressions"
           driver: "native"
 
-  # Agent Core
+  # IAgentCore Core
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -111,7 +111,7 @@ import (
     "github.com/yourorg/gagent/pkg/tool"
 )
 
-// 自定义 Tool
+// 自定义 ITool
 func main() {
     myTool := tool.NewNativeTool(
         tool.ToolInfo{
@@ -136,7 +136,7 @@ import (
 )
 
 func main() {
-    // 远程 HTTP Tool
+    // 远程 HTTP ITool
     remoteTool := tool.NewHttpTool(&tool.HttpToolConfig{
         Name:        "remote-tool",
         Description: "Remote tool via HTTP",
@@ -155,10 +155,10 @@ import (
 )
 
 func main() {
-    // MCP 协议 Tool
+    // MCP 协议 ITool
     processTool, _ := tool.NewProcessTool(&tool.ProcessToolConfig{
         Name:        "mcp-tool",
-        Description: "Tool via MCP protocol",
+        Description: "ITool via MCP protocol",
         Command:     []string{"python", "-m", "mcp_server"},
         ToolName:    "search",
     })
@@ -169,13 +169,13 @@ func main() {
 
 ### 组件模式
 
-所有子系统实现 `Component` 接口：
+所有子系统实现 `AgentRuntime` 接口：
 
 ```go
-type Component interface {
+type AgentRuntime interface {
     Name() string
     Type() ComponentType
-    Initialize(ctx context.Context, deps Dependencies) error
+    Initialize(ctx context.Context, registry Dependencies) error
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
     Dependencies() map[string]DependencySpec
@@ -187,7 +187,7 @@ type Component interface {
 组件依赖自动解析和拓扑排序：
 
 ```go
-func (c *Component) Dependencies() map[string]DependencySpec {
+func (c *AgentRuntime) Dependencies() map[string]DependencySpec {
     return map[string]DependencySpec{
         "provider": {
             Type:     component.ComponentProvider,
@@ -207,7 +207,7 @@ func (c *Component) Dependencies() map[string]DependencySpec {
 
 1. 创建 `pkg/newsubsystem/` 目录
 2. 定义接口和类型
-3. 实现 `Component` 接口
+3. 实现 `AgentRuntime` 接口
 4. 在 `app/builder.go` 中添加构建逻辑
 5. 在配置中使用
 
@@ -240,15 +240,15 @@ components:
 ```
 pkg/
 ├── component/          # 组件基础设施
-├── channel/            # Channel 子系统
+├── channel/            # IChannel 子系统
 ├── agentcore/          # AgentCore 子系统
-├── provider/           # Provider 子系统
-├── tool/               # Tool 子系统
-├── hook/               # Hook 子系统
-├── eventbus/           # EventBus 子系统
-├── contextmanager/     # ContextManager 子系统
-├── memory/             # Memory 子系统
-├── sandbox/            # Sandbox 子系统
+├── provider/           # IProvider 子系统
+├── tool/               # ITool 子系统
+├── hook/               # IHook 子系统
+├── eventbus/           # IEventBus 子系统
+├── contextmanager/     # IContextManager 子系统
+├── IMemory/             # IMemory 子系统
+├── sandbox/            # ISandbox 子系统
 ├── app/                # 应用组装
 └── protocol/           # 通信协议
     ├── mcp/            # MCP 协议

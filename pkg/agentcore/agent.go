@@ -52,21 +52,22 @@ type Event struct {
 	Error   error
 }
 
-type Agent interface {
+type IAgentCore interface {
 	Run(ctx context.Context, input Input) (Output, error)
 	Stream(ctx context.Context, input Input) (<-chan Event, error)
+	SetAgentRuntime(runtime *AgentRuntime)
 }
 
-type AgentRunner interface {
-	SetProvider(provider any) AgentRunner
-	SetToolManager(toolManager any) AgentRunner
-	SetHookManager(hookManager any) AgentRunner
-	SetContextManager(contextManager any) AgentRunner
-	SetMemory(memory any) AgentRunner
-	SetEventBus(eventBus any) AgentRunner
-	Build() (Agent, error)
-}
+//type AgentRunner interface {
+//	SetProvider(provider any) AgentRunner
+//	SetToolManager(toolManager any) AgentRunner
+//	SetHookManager(HookManager any) AgentRunner
+//	SetContextManager(contextManager any) AgentRunner
+//	SetMemory(Memory any) AgentRunner
+//	SetEventBus(EventBus any) AgentRunner
+//	Build() (IAgentCore, error)
+//}
 
-type Executor interface {
-	Execute(ctx context.Context, input Input) (Output, error)
-}
+//type Executor interface {
+//	Execute(ctx context.Context, input Input) (Output, error)
+//}

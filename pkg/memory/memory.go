@@ -8,7 +8,7 @@ import (
 type MemoryItem struct {
 	ID        string
 	Content   string
-	Metadata  map[string]any
+	Extra     map[string]any
 	Embedding []float64
 	CreatedAt time.Time
 	Score     float64
@@ -21,7 +21,7 @@ type Query struct {
 	MinScore float64
 }
 
-type Memory interface {
+type IMemory interface {
 	Add(ctx context.Context, item MemoryItem) error
 	AddBatch(ctx context.Context, items []MemoryItem) error
 	Query(ctx context.Context, q Query) ([]MemoryItem, error)

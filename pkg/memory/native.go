@@ -3,73 +3,7 @@ package memory
 import (
 	"context"
 	"sync"
-
-	"github.com/yourorg/gagent/pkg/component"
 )
-
-type Component struct {
-	name   string
-	memory Memory
-}
-
-func NewComponent(name string, memory Memory) *Component {
-	return &Component{
-		name:   name,
-		memory: memory,
-	}
-}
-
-func (c *Component) Name() string {
-	return c.name
-}
-
-func (c *Component) Type() component.ComponentType {
-	return component.ComponentMemory
-}
-
-func (c *Component) Initialize(ctx context.Context, deps component.Dependencies) error {
-	return nil
-}
-
-func (c *Component) Start(ctx context.Context) error {
-	return nil
-}
-
-func (c *Component) Stop(ctx context.Context) error {
-	return nil
-}
-
-func (c *Component) Dependencies() map[string]component.DependencySpec {
-	return nil
-}
-
-func (c *Component) Add(ctx context.Context, item MemoryItem) error {
-	return c.memory.Add(ctx, item)
-}
-
-func (c *Component) AddBatch(ctx context.Context, items []MemoryItem) error {
-	return c.memory.AddBatch(ctx, items)
-}
-
-func (c *Component) Query(ctx context.Context, q Query) ([]MemoryItem, error) {
-	return c.memory.Query(ctx, q)
-}
-
-func (c *Component) Get(ctx context.Context, id string) (MemoryItem, error) {
-	return c.memory.Get(ctx, id)
-}
-
-func (c *Component) Delete(ctx context.Context, id string) error {
-	return c.memory.Delete(ctx, id)
-}
-
-func (c *Component) Clear(ctx context.Context) error {
-	return c.memory.Clear(ctx)
-}
-
-func (c *Component) Count(ctx context.Context) (int64, error) {
-	return c.memory.Count(ctx)
-}
 
 type NativeMemory struct {
 	mu    sync.RWMutex
@@ -109,7 +43,7 @@ func (m *NativeMemory) Query(ctx context.Context, q Query) ([]MemoryItem, error)
 		}
 		if q.Filter != nil {
 			for k, v := range q.Filter {
-				if item.Metadata[k] != v {
+				if item.Extra[k] != v {
 					continue
 				}
 			}

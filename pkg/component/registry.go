@@ -26,16 +26,46 @@ func (r *Registry) Register(c Component) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	name := c.Name()
+	name := c.GetName()
 	if _, exists := r.components[name]; exists {
-		return fmt.Errorf("component %s already registered", name)
+		return fmt.Errorf("%w: component name %s", ErrComponentAlreadyExists, name)
 	}
 
 	r.components[name] = c
-	r.byType[c.Type()] = append(r.byType[c.Type()], c)
+	r.byType[c.GetType()] = append(r.byType[c.GetType()], c)
 
-	if _, hasDefault := r.defaults[c.Type()]; !hasDefault {
-		r.defaults[c.Type()] = name
+	if _, hasDefault := r.defaults[c.GetType()]; !hasDefault {
+		r.defaults[c.GetType()] = name
+	}
+
+	return nil
+}
+
+func (r *Registry) Unregister(name string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	comp, exists := r.components[name]
+	if !exists {
+		return fmt.Errorf("%w: component name %s", ErrComponentNotFound, name)
+	}
+
+	delete(r.components, name)
+
+	compType := comp.GetType()
+	components := r.byType[compType]
+	for i, c := range components {
+		if c.GetName() == name {
+			r.byType[compType] = append(components[:i], components[i+1:]...)
+			break
+		}
+	}
+
+	if defaultName, hasDefault := r.defaults[compType]; hasDefault && defaultName == name {
+		delete(r.defaults, compType)
+		if len(r.byType[compType]) > 0 {
+			r.defaults[compType] = r.byType[compType][0].GetName()
+		}
 	}
 
 	return nil
@@ -84,11 +114,9 @@ func (r *Registry) InitializeAll(ctx context.Context) error {
 		return err
 	}
 
-	deps := &dependencies{registry: r}
-
 	for _, name := range order {
 		c := r.components[name]
-		if err := c.Initialize(ctx, deps); err != nil {
+		if err := c.Initialize(ctx, r); err != nil {
 			return fmt.Errorf("initialize component %s: %w", name, err)
 		}
 	}
@@ -127,12 +155,18 @@ func (r *Registry) StopAll(ctx context.Context) error {
 	for i := len(order) - 1; i >= 0; i-- {
 		c := r.components[order[i]]
 		if err := c.Stop(ctx); err != nil {
-			return fmt.Errorf("stop component %s: %w", c.Name(), err)
+			return fmt.Errorf("stop component %s: %w", c.GetName(), err)
 		}
 	}
 	return nil
 }
 
+// topologicalSort
+//
+//	@Description: sort for all register component
+//	@receiver r
+//	@return []string
+//	@return error
 func (r *Registry) topologicalSort() ([]string, error) {
 	graph := make(map[string][]string)
 	inDegree := make(map[string]int)

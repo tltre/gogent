@@ -47,7 +47,7 @@ type ModelInfo struct {
 	SupportsVision bool
 }
 
-type Provider interface {
+type IProvider interface {
 	Generate(ctx context.Context, messages []ProviderMessage) (Response, error)
 	Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
 	ModelInfo() ModelInfo
