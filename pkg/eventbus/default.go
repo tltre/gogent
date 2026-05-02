@@ -5,28 +5,28 @@ import (
 	"sync"
 )
 
-type NativeEventBus struct {
+type DefaultEventBus struct {
 	mu          sync.RWMutex
-	subscribers map[Topic][]*nativeSubscription
+	subscribers map[Topic][]*defaultSubscription
 }
 
-func NewNativeEventBus() *NativeEventBus {
-	return &NativeEventBus{
-		subscribers: make(map[Topic][]*nativeSubscription),
+func NewDefaultEventBus() *DefaultEventBus {
+	return &DefaultEventBus{
+		subscribers: make(map[Topic][]*defaultSubscription),
 	}
 }
 
-type nativeSubscription struct {
+type defaultSubscription struct {
 	topic Topic
 	ch    chan Event
-	bus   *NativeEventBus
+	bus   *DefaultEventBus
 }
 
-func (s *nativeSubscription) Events() <-chan Event {
+func (s *defaultSubscription) Events() <-chan Event {
 	return s.ch
 }
 
-func (s *nativeSubscription) Close() error {
+func (s *defaultSubscription) Close() error {
 	s.bus.mu.Lock()
 	defer s.bus.mu.Unlock()
 
@@ -41,7 +41,7 @@ func (s *nativeSubscription) Close() error {
 	return nil
 }
 
-func (b *NativeEventBus) Publish(ctx context.Context, topic Topic, event Event) error {
+func (b *DefaultEventBus) Publish(ctx context.Context, topic Topic, event Event) error {
 	b.mu.RLock()
 	subs := b.subscribers[topic]
 	b.mu.RUnlock()
@@ -57,11 +57,11 @@ func (b *NativeEventBus) Publish(ctx context.Context, topic Topic, event Event) 
 	return nil
 }
 
-func (b *NativeEventBus) Subscribe(ctx context.Context, topic Topic) (Subscription, error) {
+func (b *DefaultEventBus) Subscribe(ctx context.Context, topic Topic) (Subscription, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	sub := &nativeSubscription{
+	sub := &defaultSubscription{
 		topic: topic,
 		ch:    make(chan Event, 100),
 		bus:   b,
@@ -70,6 +70,6 @@ func (b *NativeEventBus) Subscribe(ctx context.Context, topic Topic) (Subscripti
 	return sub, nil
 }
 
-func (b *NativeEventBus) Unsubscribe(sub Subscription) error {
+func (b *DefaultEventBus) Unsubscribe(sub Subscription) error {
 	return sub.Close()
 }

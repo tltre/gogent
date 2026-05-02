@@ -5,25 +5,25 @@ import (
 	"sync"
 )
 
-type NativeMemory struct {
+type DefaultMemory struct {
 	mu    sync.RWMutex
 	items map[string]MemoryItem
 }
 
-func NewNativeMemory() *NativeMemory {
-	return &NativeMemory{
+func NewDefaultMemory() *DefaultMemory {
+	return &DefaultMemory{
 		items: make(map[string]MemoryItem),
 	}
 }
 
-func (m *NativeMemory) Add(ctx context.Context, item MemoryItem) error {
+func (m *DefaultMemory) Add(ctx context.Context, item MemoryItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.items[item.ID] = item
 	return nil
 }
 
-func (m *NativeMemory) AddBatch(ctx context.Context, items []MemoryItem) error {
+func (m *DefaultMemory) AddBatch(ctx context.Context, items []MemoryItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, item := range items {
@@ -32,7 +32,7 @@ func (m *NativeMemory) AddBatch(ctx context.Context, items []MemoryItem) error {
 	return nil
 }
 
-func (m *NativeMemory) Query(ctx context.Context, q Query) ([]MemoryItem, error) {
+func (m *DefaultMemory) Query(ctx context.Context, q Query) ([]MemoryItem, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -58,27 +58,27 @@ func (m *NativeMemory) Query(ctx context.Context, q Query) ([]MemoryItem, error)
 	return results, nil
 }
 
-func (m *NativeMemory) Get(ctx context.Context, id string) (MemoryItem, error) {
+func (m *DefaultMemory) Get(ctx context.Context, id string) (MemoryItem, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.items[id], nil
 }
 
-func (m *NativeMemory) Delete(ctx context.Context, id string) error {
+func (m *DefaultMemory) Delete(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.items, id)
 	return nil
 }
 
-func (m *NativeMemory) Clear(ctx context.Context) error {
+func (m *DefaultMemory) Clear(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.items = make(map[string]MemoryItem)
 	return nil
 }
 
-func (m *NativeMemory) Count(ctx context.Context) (int64, error) {
+func (m *DefaultMemory) Count(ctx context.Context) (int64, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return int64(len(m.items)), nil

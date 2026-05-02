@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"context"
-	"sync"
 
 	"github.com/tltre/gagent/pkg/component"
 )
@@ -65,39 +64,4 @@ func (c *Component) SetLimits(limits ResourceLimits) {
 
 func (c *Component) GetLimits() ResourceLimits {
 	return c.sandbox.GetLimits()
-}
-
-type NativeSandbox struct {
-	mu     sync.RWMutex
-	limits ResourceLimits
-}
-
-func NewNativeSandbox(limits ResourceLimits) *NativeSandbox {
-	return &NativeSandbox{
-		limits: limits,
-	}
-}
-
-func (s *NativeSandbox) Create(ctx context.Context) (string, error) {
-	return "native-default", nil
-}
-
-func (s *NativeSandbox) Destroy(ctx context.Context, id string) error {
-	return nil
-}
-
-func (s *NativeSandbox) Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error) {
-	return ExecResult{}, nil
-}
-
-func (s *NativeSandbox) SetLimits(limits ResourceLimits) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.limits = limits
-}
-
-func (s *NativeSandbox) GetLimits() ResourceLimits {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.limits
 }

@@ -164,7 +164,7 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
 	case "native":
-		p := provider.NewNativeProvider(cc.Name)
+		p := provider.NewDefaultProvider(cc.Name)
 		return provider.NewComponent(cc.Name, p), nil
 	case "http":
 		t := b.newHTTPTransport(cc.Config, cc.Type)
@@ -271,7 +271,7 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
 	case "native":
-		eb := eventbus.NewNativeEventBus()
+		eb := eventbus.NewDefaultEventBus()
 		return eventbus.NewComponent(cc.Name, eb), nil
 	case "http":
 		t := b.newHTTPTransport(cc.Config, cc.Type)
@@ -318,7 +318,7 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
 	case "native":
-		m := memory.NewNativeMemory()
+		m := memory.NewDefaultMemory()
 		return memory.NewComponent(cc.Name, m), nil
 	case "http":
 		t := b.newHTTPTransport(cc.Config, cc.Type)
@@ -349,7 +349,7 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 
 	switch cc.Driver {
 	case "native":
-		s := sandbox.NewNativeSandbox(limits)
+		s := sandbox.NewDefaultSandbox(limits)
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	case "http":
 		t := b.newHTTPTransport(cc.Config, cc.Type)
@@ -412,15 +412,21 @@ var componentDefaults = map[component.ComponentType]func() component.Component{
 	},
 	component.ComponentSandbox: func() component.Component {
 		limits := sandbox.ResourceLimits{MaxMemoryMB: 512, NetworkAccess: false}
-		s := sandbox.NewSimpleSandbox(limits)
+		s := sandbox.NewDefaultSandbox(limits)
 		return sandbox.NewComponent("sandbox-default", s, limits)
 	},
-	// TODO: default eventbus
+	component.ComponentEventBus: func() component.Component {
+		eb := eventbus.NewDefaultEventBus()
+		return eventbus.NewComponent("eventbus-default", eb)
+	},
+	component.ComponentMemory: func() component.Component {
+		m := memory.NewDefaultMemory()
+		return memory.NewComponent("memory-default", m)
+	},
 	// TODO: default provider
 	// TODO: default tool
 	// TODO: default hook
 	// TODO: default contextmanager
-	// TODO: default memory
 	// TODO: default channel
 }
 

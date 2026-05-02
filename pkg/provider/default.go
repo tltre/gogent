@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-type NativeProvider struct {
+type DefaultProvider struct {
 	name        string
 	generateFn  func(ctx context.Context, messages []ProviderMessage) (Response, error)
 	streamFn    func(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
@@ -13,34 +13,34 @@ type NativeProvider struct {
 	mu          sync.RWMutex
 }
 
-func NewNativeProvider(name string) *NativeProvider {
-	return &NativeProvider{
+func NewDefaultProvider(name string) *DefaultProvider {
+	return &DefaultProvider{
 		name: name,
 	}
 }
 
-func (p *NativeProvider) SetGenerate(fn func(ctx context.Context, messages []ProviderMessage) (Response, error)) *NativeProvider {
+func (p *DefaultProvider) SetGenerate(fn func(ctx context.Context, messages []ProviderMessage) (Response, error)) *DefaultProvider {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.generateFn = fn
 	return p
 }
 
-func (p *NativeProvider) SetStream(fn func(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)) *NativeProvider {
+func (p *DefaultProvider) SetStream(fn func(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)) *DefaultProvider {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.streamFn = fn
 	return p
 }
 
-func (p *NativeProvider) SetModelInfo(fn func() ModelInfo) *NativeProvider {
+func (p *DefaultProvider) SetModelInfo(fn func() ModelInfo) *DefaultProvider {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.modelInfoFn = fn
 	return p
 }
 
-func (p *NativeProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
+func (p *DefaultProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.generateFn != nil {
@@ -49,7 +49,7 @@ func (p *NativeProvider) Generate(ctx context.Context, messages []ProviderMessag
 	return Response{}, nil
 }
 
-func (p *NativeProvider) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
+func (p *DefaultProvider) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.streamFn != nil {
@@ -60,7 +60,7 @@ func (p *NativeProvider) Stream(ctx context.Context, messages []ProviderMessage)
 	return ch, nil
 }
 
-func (p *NativeProvider) ModelInfo() ModelInfo {
+func (p *DefaultProvider) ModelInfo() ModelInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.modelInfoFn != nil {

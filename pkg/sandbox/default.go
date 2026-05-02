@@ -11,20 +11,20 @@ import (
 	"sync"
 )
 
-type SimpleSandbox struct {
+type DefaultSandbox struct {
 	mu     sync.RWMutex
 	limits ResourceLimits
 	active map[string]*exec.Cmd
 }
 
-func NewSimpleSandbox(limits ResourceLimits) *SimpleSandbox {
-	return &SimpleSandbox{
+func NewDefaultSandbox(limits ResourceLimits) *DefaultSandbox {
+	return &DefaultSandbox{
 		limits: limits,
 		active: make(map[string]*exec.Cmd),
 	}
 }
 
-func (s *SimpleSandbox) Create(_ context.Context) (string, error) {
+func (s *DefaultSandbox) Create(_ context.Context) (string, error) {
 	id := fmt.Sprintf("sb-%x", rand.Uint64())
 	s.mu.Lock()
 	s.active[id] = nil
@@ -32,7 +32,7 @@ func (s *SimpleSandbox) Create(_ context.Context) (string, error) {
 	return id, nil
 }
 
-func (s *SimpleSandbox) Destroy(_ context.Context, id string) error {
+func (s *DefaultSandbox) Destroy(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cmd, ok := s.active[id]; ok && cmd != nil && cmd.Process != nil {
@@ -42,7 +42,7 @@ func (s *SimpleSandbox) Destroy(_ context.Context, id string) error {
 	return nil
 }
 
-func (s *SimpleSandbox) Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error) {
+func (s *DefaultSandbox) Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error) {
 	s.mu.RLock()
 	limits := s.limits
 	s.mu.RUnlock()
@@ -133,13 +133,13 @@ func (s *SimpleSandbox) Execute(ctx context.Context, sandboxID string, req ExecR
 	return result, nil
 }
 
-func (s *SimpleSandbox) SetLimits(limits ResourceLimits) {
+func (s *DefaultSandbox) SetLimits(limits ResourceLimits) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limits = limits
 }
 
-func (s *SimpleSandbox) GetLimits() ResourceLimits {
+func (s *DefaultSandbox) GetLimits() ResourceLimits {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.limits
