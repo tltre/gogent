@@ -78,6 +78,8 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		}
 	}
 
+	b.registerDefaults()
+
 	return &App{
 		config:   b.config,
 		registry: b.registry,
@@ -401,6 +403,34 @@ func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *cli
 	})
 }
 
+var componentDefaults = map[component.ComponentType]func() component.Component{
+	component.ComponentLogger: func() component.Component {
+		l := logger.NewZapLogger(logger.Config{Level: "info", Format: "console"})
+		return logger.NewComponent("logger-default", l)
+	},
+	// TODO: default sandbox
+	// TODO: default eventbus
+	// TODO: default provider
+	// TODO: default tool
+	// TODO: default hook
+	// TODO: default contextmanager
+	// TODO: default memory
+	// TODO: default channel
+}
+
+func (b *Builder) registerDefaults() {
+	for typ, factory := range componentDefaults {
+		if b.registry.GetDefault(typ) == nil {
+			comp := factory()
+			if comp == nil {
+				continue
+			}
+			b.registry.Register(comp)
+			b.registry.SetDefault(typ, comp.GetName())
+		}
+	}
+}
+
 type transportLogAdapter struct {
 	l logger.Logger
 }
@@ -447,6 +477,11 @@ func WithContextManager(name string, cm contextmanager.IContextManager) BuildOpt
 
 func WithMemory(name string, m memory.IMemory) BuildOption {
 	comp := memory.NewComponent(name, m)
+	return WithComponent(comp)
+}
+
+func WithLogger(name string, l logger.Logger) BuildOption {
+	comp := logger.NewComponent(name, l)
 	return WithComponent(comp)
 }
 
