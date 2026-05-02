@@ -68,6 +68,8 @@ components:
       maxMemoryMB: 512
       maxCPUTime: "10s"
       networkAccess: false
+      allowedCommands: ["python3", "node", "bash"]
+      readOnlyRoot: true
 
   # Channel - 消息渠道
   - name: "channel-cli"

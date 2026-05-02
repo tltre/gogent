@@ -12,6 +12,8 @@ type ResourceLimits struct {
 	NetworkAccess   bool
 	AllowedSyscalls []string
 	MaxProcesses    int
+	AllowedCommands []string
+	ReadOnlyRoot    bool
 }
 
 type ExecRequest struct {

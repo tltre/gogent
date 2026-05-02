@@ -341,8 +341,10 @@ func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 
 func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) {
 	limits := sandbox.ResourceLimits{
-		MaxMemoryMB:   getInt(cc.Config, "maxMemoryMB", 512),
-		NetworkAccess: getBool(cc.Config, "networkAccess", false),
+		MaxMemoryMB:     getInt(cc.Config, "maxMemoryMB", 512),
+		NetworkAccess:   getBool(cc.Config, "networkAccess", false),
+		AllowedCommands: getStringSlice(cc.Config, "allowedCommands"),
+		ReadOnlyRoot:    getBool(cc.Config, "readOnlyRoot", false),
 	}
 
 	switch cc.Driver {
@@ -408,7 +410,11 @@ var componentDefaults = map[component.ComponentType]func() component.Component{
 		l := logger.NewZapLogger(logger.Config{Level: "info", Format: "console"})
 		return logger.NewComponent("logger-default", l)
 	},
-	// TODO: default sandbox
+	component.ComponentSandbox: func() component.Component {
+		limits := sandbox.ResourceLimits{MaxMemoryMB: 512, NetworkAccess: false}
+		s := sandbox.NewSimpleSandbox(limits)
+		return sandbox.NewComponent("sandbox-default", s, limits)
+	},
 	// TODO: default eventbus
 	// TODO: default provider
 	// TODO: default tool
