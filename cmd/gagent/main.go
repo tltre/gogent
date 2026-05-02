@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/tltre/gagent/pkg/app"
-	"github.com/tltre/gagent/pkg/tool"
 )
 
 func main() {
@@ -49,59 +48,4 @@ func main() {
 	}
 
 	fmt.Println("Application stopped gracefully")
-}
-
-func init() {
-	calcTool := tool.NewNativeTool(tool.ToolInfo{
-		Name:        "calculator",
-		Description: "Perform basic arithmetic calculations",
-	}, func(ctx context.Context, params map[string]any) (tool.Result, error) {
-		expression, ok := params["expression"].(string)
-		if !ok {
-			return tool.Result{IsError: true, ErrorMsg: "expression required"}, nil
-		}
-		result, err := evaluate(expression)
-		if err != nil {
-			return tool.Result{IsError: true, ErrorMsg: err.Error()}, nil
-		}
-		return tool.Result{Output: result}, nil
-	})
-	_ = calcTool
-}
-
-type CalculatorTool struct{}
-
-func (t *CalculatorTool) Info() tool.ToolInfo {
-	return tool.ToolInfo{
-		Name:        "calculator",
-		Description: "Perform basic arithmetic calculations",
-	}
-}
-
-func (t *CalculatorTool) Execute(ctx context.Context, params map[string]any) (tool.Result, error) {
-	expression, ok := params["expression"].(string)
-	if !ok {
-		return tool.Result{IsError: true, ErrorMsg: "expression required"}, nil
-	}
-
-	result, err := evaluate(expression)
-	if err != nil {
-		return tool.Result{IsError: true, ErrorMsg: err.Error()}, nil
-	}
-
-	return tool.Result{Output: result}, nil
-}
-
-func (t *CalculatorTool) Stream(ctx context.Context, params map[string]any) (<-chan tool.StreamChunk, error) {
-	ch := make(chan tool.StreamChunk, 1)
-	go func() {
-		defer close(ch)
-		result, err := t.Execute(ctx, params)
-		ch <- tool.StreamChunk{Data: result.Output, Done: true, Error: err}
-	}()
-	return ch, nil
-}
-
-func evaluate(expr string) (string, error) {
-	return fmt.Sprintf("Result of %s", expr), nil
 }

@@ -14,7 +14,7 @@ func Default() Logger { return defaultLogger }
 func SetDefault(l Logger) { defaultLogger = l }
 
 func SyncDefault() error {
-	if zl, ok := defaultLogger.(*ZapLogger); ok {
+	if zl, ok := defaultLogger.(*DefaultLogger); ok {
 		return zl.Sync()
 	}
 	return nil

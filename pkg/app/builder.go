@@ -363,7 +363,7 @@ func (b *Builder) buildLogger(cc ComponentConfig) (component.Component, error) {
 	if cfg.Format == "" {
 		cfg.Format = "console"
 	}
-	l := logger.NewZapLogger(cfg)
+	l := logger.NewDefaultLogger(cfg)
 	return logger.NewComponent(cc.Name, l), nil
 }
 
@@ -388,7 +388,7 @@ func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *cli
 
 var componentDefaults = map[component.ComponentType]func() component.Component{
 	component.ComponentLogger: func() component.Component {
-		l := logger.NewZapLogger(logger.Config{Level: "info", Format: "console"})
+		l := logger.NewDefaultLogger(logger.Config{Level: "info", Format: "console"})
 		return logger.NewComponent("logger-default", l)
 	},
 	component.ComponentSandbox: func() component.Component {
