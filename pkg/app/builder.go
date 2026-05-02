@@ -21,6 +21,13 @@ import (
 	"github.com/tltre/gagent/pkg/tool"
 )
 
+type DriverType string
+
+const (
+	DriverHTTP    DriverType = "http"
+	DriverProcess DriverType = "process"
+)
+
 type Builder struct {
 	config   *Config
 	registry *component.Registry
@@ -60,6 +67,9 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		if err != nil {
 			return nil, fmt.Errorf("build component %s: %w", cc.Name, err)
 		}
+		if comp == nil {
+			continue
+		}
 		if err := b.registry.Register(comp); err != nil {
 			return nil, fmt.Errorf("register component %s: %w", cc.Name, err)
 		}
@@ -87,26 +97,26 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 }
 
 func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error) {
-	switch cc.Type {
-	case "channel":
+	switch component.ComponentType(cc.Type) {
+	case component.ComponentChannel:
 		return b.buildChannel(cc)
-	case "agentcore":
+	case component.ComponentAgentCore:
 		return b.buildAgentCore(cc)
-	case "provider":
+	case component.ComponentProvider:
 		return b.buildProvider(cc)
-	case "tool":
+	case component.ComponentTool:
 		return b.buildTool(cc)
-	case "hook":
+	case component.ComponentHook:
 		return b.buildHook(cc)
-	case "eventbus":
+	case component.ComponentEventBus:
 		return b.buildEventBus(cc)
-	case "contextmanager":
+	case component.ComponentContextManager:
 		return b.buildContextManager(cc)
-	case "memory":
+	case component.ComponentMemory:
 		return b.buildMemory(cc)
-	case "sandbox":
+	case component.ComponentSandbox:
 		return b.buildSandbox(cc)
-	case "logger":
+	case component.ComponentLogger:
 		return b.buildLogger(cc)
 	default:
 		return nil, fmt.Errorf("unknown component type: %s", cc.Type)
@@ -114,74 +124,65 @@ func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error
 }
 
 func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		bufferSize := getInt(cc.Config, "bufferSize", 100)
-		ch := channel.NewNativeChannel(cc.Name, bufferSize)
-		return channel.NewComponent(cc.Name, ch), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentChannel))
 		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return channel.NewComponent(cc.Name, ch), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentChannel))
 		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return channel.NewComponent(cc.Name, ch), nil
 	default:
-		return nil, fmt.Errorf("unknown channel driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown channel driver: %s", DriverType(cc.Driver))
 	}
 }
 
 func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		return agentcore.NewComponent(cc.Name, nil), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentAgentCore))
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return agentcore.NewComponent(cc.Name, core), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentAgentCore))
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return agentcore.NewComponent(cc.Name, core), nil
 	default:
-		return nil, fmt.Errorf("unknown agentcore driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown agentcore driver: %s", DriverType(cc.Driver))
 	}
 }
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		p := provider.NewDefaultProvider(cc.Name)
-		return provider.NewComponent(cc.Name, p), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentProvider))
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return provider.NewComponent(cc.Name, p), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentProvider))
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return provider.NewComponent(cc.Name, p), nil
 	default:
-		return nil, fmt.Errorf("unknown provider driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown provider driver: %s", DriverType(cc.Driver))
 	}
 }
 
@@ -195,14 +196,8 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 					name := getString(toolMap, "name")
 					desc := getString(toolMap, "description")
 					driver := getString(toolMap, "driver")
-					switch driver {
-					case "native":
-						toolImpl := tool.NewNativeTool(tool.ToolInfo{
-							Name:        name,
-							Description: desc,
-						}, nil)
-						comp.Register(toolImpl)
-				case "http":
+					switch DriverType(driver) {
+					case DriverHTTP:
 						tr := b.newHTTPTransport(toolMap, "tool")
 						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
@@ -211,7 +206,7 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 							Transport:   tr,
 						})
 						comp.Register(toolImpl)
-				case "process":
+					case DriverProcess:
 						tr := b.newStdioTransport(toolMap, "tool")
 						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
@@ -239,11 +234,8 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 					name := getString(hookMap, "name")
 					driver := getString(hookMap, "driver")
 					events := getEvents(hookMap, "events")
-					switch driver {
-					case "native":
-						hookImpl := hook.NewNativeHook(name, events, nil)
-						comp.Register(hookImpl)
-				case "http":
+					switch DriverType(driver) {
+					case DriverHTTP:
 						tr := b.newHTTPTransport(hookMap, "hook")
 						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
 							Name:      name,
@@ -251,7 +243,7 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 							Transport: tr,
 						})
 						comp.Register(hookImpl)
-				case "process":
+					case DriverProcess:
 						tr := b.newStdioTransport(hookMap, "hook")
 						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
 							Name:      name,
@@ -269,73 +261,65 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 }
 
 func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		eb := eventbus.NewDefaultEventBus()
-		return eventbus.NewComponent(cc.Name, eb), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentEventBus))
 		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return eventbus.NewComponent(cc.Name, eb), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentEventBus))
 		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return eventbus.NewComponent(cc.Name, eb), nil
 	default:
-		return nil, fmt.Errorf("unknown eventbus driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown eventbus driver: %s", DriverType(cc.Driver))
 	}
 }
 
 func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		return contextmanager.NewComponent(cc.Name, nil), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentContextManager))
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentContextManager))
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
-		return nil, fmt.Errorf("unknown contextmanager driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown contextmanager driver: %s", DriverType(cc.Driver))
 	}
 }
 
 func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case "native":
-		m := memory.NewDefaultMemory()
-		return memory.NewComponent(cc.Name, m), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentMemory))
 		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return memory.NewComponent(cc.Name, m), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentMemory))
 		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return memory.NewComponent(cc.Name, m), nil
 	default:
-		return nil, fmt.Errorf("unknown memory driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown memory driver: %s", DriverType(cc.Driver))
 	}
 }
 
@@ -347,26 +331,23 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 		ReadOnlyRoot:    getBool(cc.Config, "readOnlyRoot", false),
 	}
 
-	switch cc.Driver {
-	case "native":
-		s := sandbox.NewDefaultSandbox(limits)
-		return sandbox.NewComponent(cc.Name, s, limits), nil
-	case "http":
-		t := b.newHTTPTransport(cc.Config, cc.Type)
+	switch DriverType(cc.Driver) {
+	case DriverHTTP:
+		t := b.newHTTPTransport(cc.Config, string(component.ComponentSandbox))
 		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return sandbox.NewComponent(cc.Name, s, limits), nil
-	case "process":
-		t := b.newStdioTransport(cc.Config, cc.Type)
+	case DriverProcess:
+		t := b.newStdioTransport(cc.Config, string(component.ComponentSandbox))
 		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
 			Name:      cc.Name,
 			Transport: t,
 		})
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	default:
-		return nil, fmt.Errorf("unknown sandbox driver: %s", cc.Driver)
+		return nil, fmt.Errorf("unknown sandbox driver: %s", DriverType(cc.Driver))
 	}
 }
 
