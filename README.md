@@ -11,6 +11,7 @@
 - **Transport 抽象**: 统一 JSON-RPC 协议，基于 MCP transport 层，方法自定义
 - **可观测性**: EventBus 日志管道 + zap 结构化日志，traceId 追踪
 - **Fallback 机制**: builder 优先用户注入 → YAML 配置 → 框架默认实现
+- **多实例支持**: Registry 透明访问，同类型组件可注册多份，按名获取
 
 ## 子系统
 

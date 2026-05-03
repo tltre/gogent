@@ -142,7 +142,35 @@ type IAgentCore interface {
 }
 ```
 
-`AgentRuntime` 持有所有子系统引用（Provider、ToolManager、HookManager、ContextManager、Memory、EventBus、Sandbox），全部从 Registry 在 `Initialize()` 时解析。
+`AgentRuntime` 持有 `reg *component.Registry`，所有依赖通过 Registry 按需获取。框架埋点用 `reg.GetDefault(type)`，用户代码用 `reg.Get(name)` 获取命名实例。
+
+### Registry 透明访问（v0.3.0）
+
+AgentRuntime 不再持有固定字段。所有子系统引用通过 Registry 获取：
+
+```go
+type AgentRuntime struct {
+    Name  string
+    Agent IAgentCore
+    reg   *component.Registry
+}
+func (c *AgentRuntime) Reg() *component.Registry
+```
+
+- **单实例**: `reg.GetDefault(ComponentProvider)` — 自动走 YAML `defaults` 或第一个注册的
+- **多实例**: `reg.Get("provider-smart")` — 精确命名获取；`reg.GetByType(ComponentProvider)` — 全部
+- **Dependencies()**: 保留类型声明，仅用于拓扑排序保序
+
+### Remote Discovery Protocol（v0.3.0）
+
+Stdio transport 注册 `services/lookup` 和 `services/lookupAll` 处理器，daemon 进程可查询主进程 Registry：
+
+```
+daemon → Client: {"method": "services/lookup", "params": {"type": "eventbus", "name": "log"}}
+Client → daemon: {"result": {"name": "eventbus-log"}}
+```
+
+`StdioTransportConfig.RequestHandler` 在 `Start()` 时注册。未来 SDK 封装为 `sdk.Lookup(type, name)`。
 
 ### Channel
 

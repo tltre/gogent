@@ -4,7 +4,7 @@
 
 - **Module**: `github.com/tltre/gagent`
 - **Go**: 1.25.5
-- **Version**: v0.2.0
+- **Version**: v0.3.0
 - **Entrypoint**: `cmd/gagent/main.go` — expects a YAML config path as first argument
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect)
 - **CI / lint / Makefile**: none
@@ -86,19 +86,35 @@ All instrumentation flows through EventBus topic `system.log`:
 
 `WithTraceID(ctx)` generates a per-request traceId carried in context for cross-component correlation.
 
-### AgentRuntime fields
+### Registry Transparent Access (v0.3.0)
+
+AgentRuntime no longer holds fixed fields for each subsystem. All dependency access goes through the Registry:
+
+```go
+type AgentRuntime struct {
+    Name  string
+    Agent IAgentCore
+    reg   *component.Registry
+}
+
+func (c *AgentRuntime) Reg() *component.Registry
+```
+
+- **Framework instrumentation**: `reg.GetDefault(ComponentEventBus)` — always available via defaults
+- **User code**: `reg.Get("provider-smart")` for named instances, `reg.GetByType(ComponentProvider)` for all
+- **Dependencies()**: declaration preserved for topological sort ordering (type only, no instance name)
+- Multi-instance: same type (`"eventbus"`) can have multiple named instances (`eventbus-business`, `eventbus-log`)
+
+### Remote Discovery Protocol (v0.3.0)
+
+Stdio transports expose `services/lookup` and `services/lookupAll` for daemon processes to query the main Registry:
 
 ```
-Provider       provider.IProvider
-ToolManager    *tool.ToolManager
-HookManager    *hook.HookManager
-ContextManager contextmanager.IContextManager
-Memory         memory.IMemory
-EventBus       eventbus.IEventBus
-Sandbox        sandbox.ISandbox
+daemon → main: {"method": "services/lookup", "params": {"type": "eventbus", "name": "log"}}
+main → daemon: {"result": {"name": "eventbus-log"}}
 ```
 
-Resolved from registry during `Initialize()`, injected via `c.Agent.SetAgentRuntime(c)`.
+Builder registers the lookup handler on all stdio transports via `StdioTransportConfig.RequestHandler`.
 
 ### Default implementations (framework-provided, user-replaceable)
 
@@ -129,65 +145,3 @@ Resolved from registry during `Initialize()`, injected via `c.Agent.SetAgentRunt
 4. **Process* implementations use LazyTransport**: transports auto-start on first `Call()`. Always use `client.WrapLazy()` for new process implementations.
 
 5. **Driver constants**: Use `DriverHTTP`/`DriverProcess`/`DriverNative` from `pkg/app/builder.go`, never hardcoded strings.
-
-## v0.3.0 Roadmap — Multi-Instance Components & Registry Transparency
-
-### Phase 1: Registry Transparent Access（本地 Registry 按需获取）
-
-**目标**：组件通过 Registry 自主获取任意实例，不再由 Initialize 自动注入单一实例。
-
-**设计要点**：
-
-- `Dependencies()` 保留——声明**类型**依赖（`ComponentEventBus`），仅用于拓扑排序保证初始化顺序
-- `Initialize(ctx, registry)` 中组件保留 Registry 引用，**不再**自动解析实例到固定字段
-- 框架埋点用 `reg.GetDefault(type)` 获取默认实例（总是可用）
-- 用户代码用 `reg.Get(name)` 精确获取命名实例、`reg.GetByType(type)` 获取同类型全部实例
-- AgentRuntime 移除 `Provider`/`EventBus`/`Memory` 等固定字段，改为 `reg` 引用
-
-**改动清单**：
-
-| 文件 | 操作 |
-|------|------|
-| `pkg/agentcore/component.go` | 移除固定字段（Provider/ToolManager/...），保留 `Agent` + `reg`；提供 `Reg()` 访问器 |
-| `pkg/agentcore/component.go` | `publishLog` 改为 `reg.GetDefault(ComponentEventBus)` 直出 |
-| 各组件 `component.go` | `Initialize()` 只保留 `reg`，移除自动类型断言注入 |
-| `tests/*/` | 更新所有使用 `r.Provider` 等字段的代码为 `r.Reg().Get(...)` |
-
-**验证点**：
-- 单实例：`reg.GetDefault(ComponentProvider)` 返回唯一实例
-- 多实例：`reg.Get("provider-smart")` 返回指定实例
-- 拓扑排序：AgentRuntime 初始化前保证同类型所有实例已初始化
-
-### Phase 2: Remote Discovery Protocol（远端 daemon 查询可用服务）
-
-**目标**：daemon 进程通过 Transport 查询主进程 Registry 中可用的组件实例。
-
-**协议**：
-
-```
-daemon → Client: {"method": "services/lookup", "params": {"type": "eventbus", "name": "log"}}
-Client → daemon: {"result": {"name": "eventbus-log"}}
-
-daemon → Client: {"method": "services/lookup", "params": {"type": "eventbus", "name": ""}}
-Client → daemon: {"result": {"name": "eventbus-business"}}   // default
-
-daemon → Client: {"method": "services/lookupAll", "params": {"type": "eventbus"}}
-Client → daemon: {"result": {"instances": ["eventbus-business", "eventbus-log"]}}
-```
-
-**改动清单**：
-
-| 文件 | 操作 |
-|------|------|
-| `internal/client/stdio_transport.go` | 注册 `services/lookup` / `services/lookupAll` handler |
-| `internal/client/http_transport.go` | 同上 |
-| daemon 端 handler（测试用） | 实现 lookup 模拟返回 |
-
-**SDK 侧（未来独立仓库）**：
-- `sdk.Lookup(type)` → `Transport.Call("services/lookup")` → 返回默认实例名
-- `sdk.Lookup(type, name)` → 返回指定实例名
-- `sdk.LookupAll(type)` → 返回全部实例名列表
-
-**验证点**：
-- daemon 进程通过 lookup 查询到主进程注册的 eventbus/provider 等实例名
-- 单实例 YAML 无 dependencies → lookup 返回 default
