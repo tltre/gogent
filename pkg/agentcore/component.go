@@ -5,26 +5,14 @@ import (
 	"time"
 
 	"github.com/tltre/gagent/pkg/component"
-	"github.com/tltre/gagent/pkg/contextmanager"
 	"github.com/tltre/gagent/pkg/eventbus"
-	"github.com/tltre/gagent/pkg/hook"
 	"github.com/tltre/gagent/pkg/logger"
-	"github.com/tltre/gagent/pkg/memory"
-	"github.com/tltre/gagent/pkg/provider"
-	"github.com/tltre/gagent/pkg/sandbox"
-	"github.com/tltre/gagent/pkg/tool"
 )
 
 type AgentRuntime struct {
-	Name           string
-	Agent          IAgentCore
-	Provider       provider.IProvider
-	ToolManager    *tool.ToolManager
-	HookManager    *hook.HookManager
-	ContextManager contextmanager.IContextManager
-	Memory         memory.IMemory
-	EventBus       eventbus.IEventBus
-	Sandbox        sandbox.ISandbox
+	Name  string
+	Agent IAgentCore
+	reg   *component.Registry
 }
 
 func NewComponent(name string, agent IAgentCore) *AgentRuntime {
@@ -42,48 +30,14 @@ func (c *AgentRuntime) GetType() component.ComponentType {
 	return component.ComponentAgentCore
 }
 
-func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Registry) error {
-	if c.Provider == nil {
-		if p, ok := registry.GetDefault(component.ComponentProvider).(provider.IProvider); ok && p != nil {
-			c.Provider = p
-		}
-	}
-	if c.ToolManager == nil {
-		if tm, ok := registry.GetDefault(component.ComponentTool).(*tool.ToolManager); ok && tm != nil {
-			c.ToolManager = tm
-		}
-	}
-	if c.HookManager == nil {
-		if hm, ok := registry.GetDefault(component.ComponentHook).(*hook.HookManager); ok && hm != nil {
-			c.HookManager = hm
-		}
-	}
-	if c.ContextManager == nil {
-		if cm, ok := registry.GetDefault(component.ComponentContextManager).(contextmanager.IContextManager); ok && cm != nil {
-			c.ContextManager = cm
-		}
-	}
-	if c.Memory == nil {
-		if m, ok := registry.GetDefault(component.ComponentMemory).(memory.IMemory); ok && m != nil {
-			c.Memory = m
-		}
-	}
-	if c.EventBus == nil {
-		if eb, ok := registry.GetDefault(component.ComponentEventBus).(eventbus.IEventBus); ok && eb != nil {
-			c.EventBus = eb
-		}
-	}
-	if c.Sandbox == nil {
-		if sb, ok := registry.GetDefault(component.ComponentSandbox).(sandbox.ISandbox); ok && sb != nil {
-			c.Sandbox = sb
-		}
-	}
-	c.Agent.SetAgentRuntime(c)
+func (c *AgentRuntime) Reg() *component.Registry {
+	return c.reg
+}
 
-	c.publishLog(ctx, logger.InfoLevel, "dependencies resolved",
-		logger.Field{Key: "provider", Value: nameOrNil(c.Provider)},
-		logger.Field{Key: "tool", Value: nameOrNil(c.ToolManager)},
-	)
+func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Registry) error {
+	c.reg = registry
+	c.Agent.SetAgentRuntime(c)
+	c.publishLog(ctx, logger.InfoLevel, "dependencies resolved")
 	return nil
 }
 
@@ -168,74 +122,32 @@ func (c *AgentRuntime) Stream(ctx context.Context, input Input) (<-chan Event, e
 	return c.Agent.Stream(ctx, input)
 }
 
-func (c *AgentRuntime) SetProvider(provider provider.IProvider) *AgentRuntime {
-	c.Provider = provider
-	return c
-}
-
-func (c *AgentRuntime) SetToolManager(toolManager *tool.ToolManager) *AgentRuntime {
-	c.ToolManager = toolManager
-	return c
-}
-
-func (c *AgentRuntime) SetHookManager(hookManager *hook.HookManager) *AgentRuntime {
-	c.HookManager = hookManager
-	return c
-}
-
-func (c *AgentRuntime) SetContextManager(contextManager contextmanager.IContextManager) *AgentRuntime {
-	c.ContextManager = contextManager
-	return c
-}
-
-func (c *AgentRuntime) SetMemory(memory memory.IMemory) *AgentRuntime {
-	c.Memory = memory
-	return c
-}
-
-func (c *AgentRuntime) SetEventBus(eventBus eventbus.IEventBus) *AgentRuntime {
-	c.EventBus = eventBus
-	return c
-}
-
-func (c *AgentRuntime) SetSandbox(sb sandbox.ISandbox) *AgentRuntime {
-	c.Sandbox = sb
-	return c
-}
-
 func (c *AgentRuntime) SetAgentCore(Agent IAgentCore) *AgentRuntime {
 	c.Agent = Agent
 	return c
 }
 
 func (c *AgentRuntime) publishLog(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
-	if c.EventBus == nil {
+	bus := c.reg.GetDefault(component.ComponentEventBus)
+	if bus == nil {
 		return
 	}
-	ev := logger.LogEvent{
-		TraceID: logger.TraceIDFromContext(ctx),
-		Entry: logger.LogEntry{
-			Timestamp: time.Now(),
-			Level:     level,
-			Module:    "agentcore",
-			Message:   msg,
-			Fields:    fields,
+	eb, ok := bus.(eventbus.IEventBus)
+	if !ok {
+		return
+	}
+	eb.Publish(ctx, "system.log", eventbus.Event{
+		Topic: "system.log",
+		Key:   "agentcore",
+		Payload: logger.LogEvent{
+			TraceID: logger.TraceIDFromContext(ctx),
+			Entry: logger.LogEntry{
+				Timestamp: time.Now(),
+				Level:     level,
+				Module:    "agentcore",
+				Message:   msg,
+				Fields:    fields,
+			},
 		},
-	}
-	c.EventBus.Publish(ctx, "system.log", eventbus.Event{
-		Topic:   "system.log",
-		Key:     "agentcore",
-		Payload: ev,
 	})
-}
-
-func nameOrNil(v any) string {
-	if v == nil {
-		return "nil"
-	}
-	type named interface{ GetName() string }
-	if n, ok := v.(named); ok {
-		return n.GetName()
-	}
-	return "set"
 }

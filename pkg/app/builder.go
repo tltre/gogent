@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/tltre/gagent/internal/client"
 	"github.com/tltre/gagent/pkg/agentcore"
 	"github.com/tltre/gagent/pkg/channel"
@@ -369,12 +371,55 @@ func (b *Builder) buildLogger(cc ComponentConfig) (component.Component, error) {
 
 func (b *Builder) newStdioTransport(cfgMap map[string]any, component string) *client.StdioTransport {
 	return client.NewStdioTransport(client.StdioTransportConfig{
-		Command:   getString(cfgMap, "command"),
-		Args:      getStringSlice(cfgMap, "args"),
-		Env:       getStringSlice(cfgMap, "env"),
-		Component: component,
-		Logger:    &transportLogAdapter{l: logger.Default()},
+		Command:        getString(cfgMap, "command"),
+		Args:           getStringSlice(cfgMap, "args"),
+		Env:            getStringSlice(cfgMap, "env"),
+		Component:      component,
+		Logger:         &transportLogAdapter{l: logger.Default()},
+		RequestHandler: b.lookupHandler(),
 	})
+}
+
+func (b *Builder) lookupHandler() transport.RequestHandler {
+	return func(_ context.Context, req transport.JSONRPCRequest) (*transport.JSONRPCResponse, error) {
+		switch req.Method {
+		case "services/lookup":
+			var params struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			}
+			paramsRaw, _ := json.Marshal(req.Params)
+			json.Unmarshal(paramsRaw, &params)
+			compType := component.ComponentType(params.Type)
+			var comp component.Component
+			if params.Name != "" {
+				comp = b.registry.Get(params.Name)
+			} else {
+				comp = b.registry.GetDefault(compType)
+			}
+			result := map[string]string{}
+			if comp != nil {
+				result["name"] = comp.GetName()
+			}
+			raw, _ := json.Marshal(result)
+			return transport.NewJSONRPCResultResponse(req.ID, raw), nil
+		case "services/lookupAll":
+			var params struct {
+				Type string `json:"type"`
+			}
+			paramsRaw, _ := json.Marshal(req.Params)
+			json.Unmarshal(paramsRaw, &params)
+			comps := b.registry.GetByType(component.ComponentType(params.Type))
+			names := make([]string, len(comps))
+			for i, c := range comps {
+				names[i] = c.GetName()
+			}
+			raw, _ := json.Marshal(map[string][]string{"instances": names})
+			return transport.NewJSONRPCResultResponse(req.ID, raw), nil
+		default:
+			return transport.NewJSONRPCErrorResponse(req.ID, -32601, "method not found", nil), nil
+		}
+	}
 }
 
 func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *client.HTTPTransport {

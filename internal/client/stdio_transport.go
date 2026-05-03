@@ -13,11 +13,12 @@ import (
 )
 
 type StdioTransportConfig struct {
-	Command   string
-	Args      []string
-	Env       []string
-	Component string
-	Logger    Logger
+	Command        string
+	Args           []string
+	Env            []string
+	Component      string
+	Logger         Logger
+	RequestHandler transport.RequestHandler
 }
 
 type StdioTransport struct {
@@ -41,6 +42,10 @@ func NewStdioTransport(cfg StdioTransportConfig) *StdioTransport {
 
 func (t *StdioTransport) Start(ctx context.Context) error {
 	t.tr = transport.NewStdio(t.cfg.Command, t.cfg.Env, t.cfg.Args...)
+
+	if t.cfg.RequestHandler != nil {
+		t.tr.SetRequestHandler(t.cfg.RequestHandler)
+	}
 
 	t.tr.SetNotificationHandler(func(notification mcp.JSONRPCNotification) {
 		t.notifyMu.RLock()
