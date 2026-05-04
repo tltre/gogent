@@ -481,8 +481,10 @@ func (b *Builder) registerDefaults() {
 
 func (b *Builder) buildInterface() iface.Interface {
 	switch b.config.Interface.Type {
-	case "cli", "tui", "http":
-		// v0.4.2+, currently nil — falls back to blocking bare event loop
+	case "cli":
+		return iface.NewDefaultCLI(b.config.Interface.CLI.Banner, b.config.Interface.CLI.Prompt)
+	case "tui", "http":
+		// v0.4.3+, currently nil — falls back to blocking bare event loop
 		return nil
 	default:
 		return nil

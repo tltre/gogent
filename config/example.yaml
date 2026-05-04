@@ -1,6 +1,12 @@
 name: my-agent
 version: "1.0.0"
 
+interface:
+  type: cli
+  cli:
+    banner: "Welcome to Gogent Agent"
+    prompt: "> "
+
 components:
   # EventBus - 消息总线
   - name: "eventbus-main"

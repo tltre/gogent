@@ -38,14 +38,12 @@ func main() {
 
 	go func() {
 		<-sigChan
-		fmt.Println("\nShutting down...")
+		fmt.Fprintln(os.Stderr, "\nShutting down...")
 		cancel()
 	}()
 
 	if err := application.Run(ctx); err != nil {
-		fmt.Printf("Application error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Application error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println("Application stopped gracefully")
 }
