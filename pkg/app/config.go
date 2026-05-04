@@ -18,8 +18,24 @@ func ParseConfig(data []byte) (*Config, error) {
 type Config struct {
 	Name       string            `yaml:"name"`
 	Version    string            `yaml:"version"`
-	Components []ComponentConfig `yaml:"components"`
+	Interface  InterfaceConfig   `yaml:"interface,omitempty"`
+	Components []ComponentConfig `yaml:"components,omitempty"`
 	Defaults   map[string]string `yaml:"defaults,omitempty"`
+}
+
+type InterfaceConfig struct {
+	Type string       `yaml:"type"`           // "cli" | "tui" | "http"
+	CLI  CLIConfig    `yaml:"cli,omitempty"`
+	HTTP HTTPConfig   `yaml:"http,omitempty"`
+}
+
+type CLIConfig struct {
+	Prompt string `yaml:"prompt,omitempty"`
+	Banner string `yaml:"banner,omitempty"`
+}
+
+type HTTPConfig struct {
+	Port int `yaml:"port,omitempty"`
 }
 
 type ComponentConfig struct {

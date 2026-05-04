@@ -16,6 +16,7 @@ import (
 	"github.com/tltre/gagent/pkg/contextmanager"
 	"github.com/tltre/gagent/pkg/eventbus"
 	"github.com/tltre/gagent/pkg/hook"
+	"github.com/tltre/gagent/pkg/iface"
 	"github.com/tltre/gagent/pkg/logger"
 	"github.com/tltre/gagent/pkg/memory"
 	"github.com/tltre/gagent/pkg/provider"
@@ -33,6 +34,7 @@ const (
 type Builder struct {
 	config   *Config
 	registry *component.Registry
+	iface    iface.Interface
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -92,10 +94,18 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 
 	b.registerDefaults()
 
-	return &App{
+	app := &App{
 		config:   b.config,
 		registry: b.registry,
-	}, nil
+	}
+
+	if b.iface != nil {
+		app.iface = b.iface
+	} else {
+		app.iface = b.buildInterface()
+	}
+
+	return app, nil
 }
 
 func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error) {
@@ -469,6 +479,16 @@ func (b *Builder) registerDefaults() {
 	}
 }
 
+func (b *Builder) buildInterface() iface.Interface {
+	switch b.config.Interface.Type {
+	case "cli", "tui", "http":
+		// v0.4.2+, currently nil — falls back to blocking bare event loop
+		return nil
+	default:
+		return nil
+	}
+}
+
 type transportLogAdapter struct {
 	l logger.Logger
 }
@@ -492,6 +512,13 @@ func (a *transportLogAdapter) Log(ctx context.Context, entry client.LogEntry) {
 }
 
 type BuildOption func(*Builder) error
+
+func WithInterface(i iface.Interface) BuildOption {
+	return func(b *Builder) error {
+		b.iface = i
+		return nil
+	}
+}
 
 func WithAgentCore(name string, core agentcore.IAgentCore) BuildOption {
 	comp := agentcore.NewComponent(name, core)

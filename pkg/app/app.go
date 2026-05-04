@@ -5,15 +5,21 @@ import (
 	"fmt"
 
 	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/iface"
 )
 
 type App struct {
 	config   *Config
 	registry *component.Registry
+	iface    iface.Interface
 }
 
 func (a *App) Registry() *component.Registry {
 	return a.registry
+}
+
+func (a *App) Interface() iface.Interface {
+	return a.iface
 }
 
 func (a *App) Initialize(ctx context.Context) error {
@@ -51,7 +57,14 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	<-ctx.Done()
+	if a.iface != nil {
+		err := a.iface.Run(ctx, a.registry)
+		if err != nil {
+			return err
+		}
+	} else {
+		<-ctx.Done()
+	}
 
 	return a.Stop(ctx)
 }
