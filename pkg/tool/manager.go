@@ -3,40 +3,42 @@ package tool
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/logger"
 )
 
 type ToolManager struct {
-	name  string
+	component.BasicComponent
 	mu    sync.RWMutex
 	tools map[string]ITool
 }
 
 func NewComponent(name string) *ToolManager {
 	return &ToolManager{
-		name:  name,
-		tools: make(map[string]ITool),
+		BasicComponent: component.NewBasicComponent(name),
+		tools:          make(map[string]ITool),
 	}
-}
-
-func (tm *ToolManager) GetName() string {
-	return tm.name
 }
 
 func (tm *ToolManager) GetType() component.ComponentType {
 	return component.ComponentTool
 }
 
-func (tm *ToolManager) Initialize(ctx context.Context, deps *component.Registry) error {
+func (tm *ToolManager) Initialize(ctx context.Context, registry *component.Registry) error {
+	tm.SetRegistry(registry)
+	tm.log(ctx, logger.InfoLevel, "tool manager initialized")
 	return nil
 }
 
 func (tm *ToolManager) Start(ctx context.Context) error {
+	tm.log(ctx, logger.DebugLevel, "tool manager started")
 	return nil
 }
 
 func (tm *ToolManager) Stop(ctx context.Context) error {
+	tm.log(ctx, logger.DebugLevel, "tool manager stopped")
 	return nil
 }
 
@@ -75,7 +77,25 @@ func (tm *ToolManager) Execute(ctx context.Context, name string, params map[stri
 	if !ok {
 		return Result{IsError: true, ErrorMsg: "tool not found: " + name}, nil
 	}
-	return tool.Execute(ctx, params)
+	tm.log(ctx, logger.DebugLevel, "tool execute started",
+		logger.Field{Key: "tool", Value: name},
+	)
+	start := time.Now()
+	result, err := tool.Execute(ctx, params)
+	dur := time.Since(start)
+	if err != nil {
+		tm.log(ctx, logger.ErrorLevel, "tool execute failed",
+			logger.Field{Key: "tool", Value: name},
+			logger.Field{Key: "error", Value: err.Error()},
+			logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
+		)
+		return result, err
+	}
+	tm.log(ctx, logger.InfoLevel, "tool execute completed",
+		logger.Field{Key: "tool", Value: name},
+		logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
+	)
+	return result, nil
 }
 
 func (tm *ToolManager) Stream(ctx context.Context, name string, params map[string]any) (<-chan StreamChunk, error) {
@@ -91,4 +111,26 @@ func (tm *ToolManager) Stream(ctx context.Context, name string, params map[strin
 		return ch, nil
 	}
 	return tool.Stream(ctx, params)
+}
+
+func (tm *ToolManager) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
+	r := tm.Registry()
+	if r == nil {
+		return
+	}
+	lc := r.GetDefault(component.ComponentLogger)
+	if lc == nil {
+		return
+	}
+	l, ok := lc.(logger.Logger)
+	if !ok {
+		return
+	}
+	l.Log(ctx, logger.LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Module:    tm.GetName(),
+		Message:   msg,
+		Fields:    fields,
+	})
 }

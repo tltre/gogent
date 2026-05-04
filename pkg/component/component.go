@@ -38,3 +38,16 @@ type Dependencies interface {
 	GetByType(typ ComponentType) []Component
 	GetDefault(typ ComponentType) Component
 }
+
+type BasicComponent struct {
+	name string
+	reg  *Registry
+}
+
+func NewBasicComponent(name string) BasicComponent {
+	return BasicComponent{name: name}
+}
+
+func (b *BasicComponent) GetName() string      { return b.name }
+func (b *BasicComponent) Registry() *Registry  { return b.reg }
+func (b *BasicComponent) SetRegistry(r *Registry) { b.reg = r }

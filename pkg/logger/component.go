@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/tltre/gagent/pkg/component"
-	"github.com/tltre/gagent/pkg/eventbus"
 )
 
 var defaultLogger Logger = NewDefault()
@@ -21,61 +20,41 @@ func SyncDefault() error {
 }
 
 type LoggerComponent struct {
-	name     string
-	impl     Logger
-	eventBus eventbus.IEventBus
-	sub      eventbus.Subscription
+	component.BasicComponent
+	impl Logger
 }
 
 func NewComponent(name string, l Logger) *LoggerComponent {
-	return &LoggerComponent{name: name, impl: l}
+	return &LoggerComponent{
+		BasicComponent: component.NewBasicComponent(name),
+		impl:           l,
+	}
 }
 
-func (c *LoggerComponent) GetName() string       { return c.name }
 func (c *LoggerComponent) GetType() component.ComponentType { return component.ComponentLogger }
 
 func (c *LoggerComponent) Initialize(ctx context.Context, registry *component.Registry) error {
-	if eb, ok := registry.GetDefault(component.ComponentEventBus).(eventbus.IEventBus); ok && eb != nil {
-		c.eventBus = eb
-	}
+	c.SetRegistry(registry)
 	return nil
 }
 
 func (c *LoggerComponent) Start(_ context.Context) error {
-	if c.eventBus == nil {
-		return nil
-	}
-	sub, err := c.eventBus.Subscribe(context.Background(), "system.log")
-	if err != nil {
-		return err
-	}
-	c.sub = sub
-	go c.processEvents()
 	return nil
 }
 
 func (c *LoggerComponent) Stop(_ context.Context) error {
-	if c.sub != nil {
-		c.sub.Close()
-	}
 	SyncDefault()
 	return nil
 }
 
 func (c *LoggerComponent) Dependencies() map[string]component.DependencySpec {
-	return map[string]component.DependencySpec{
-		"eventBus": {Type: component.ComponentEventBus, Required: true},
-	}
+	return nil
 }
 
-func (c *LoggerComponent) processEvents() {
-	for ev := range c.sub.Events() {
-		if logEvent, ok := ev.Payload.(LogEvent); ok {
-			entry := logEvent.Entry
-			if logEvent.TraceID != "" {
-				entry.Fields = append(entry.Fields, Field{Key: "traceId", Value: logEvent.TraceID})
-			}
-			c.impl.Log(context.Background(), entry)
-		}
-	}
+func (c *LoggerComponent) Log(ctx context.Context, entry LogEntry) {
+	c.impl.Log(ctx, entry)
+}
+
+func (c *LoggerComponent) Logger() Logger {
+	return c.impl
 }

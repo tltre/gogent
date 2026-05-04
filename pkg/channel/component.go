@@ -3,12 +3,14 @@ package channel
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gagent/pkg/logger"
 )
 
 type ChannelManager struct {
-	name     string
+	component.BasicComponent
 	mu       sync.RWMutex
 	channels map[string]IChannel
 }
@@ -20,13 +22,9 @@ func NewComponent(name string, channel ...IChannel) *ChannelManager {
 	}
 
 	return &ChannelManager{
-		name:     name,
-		channels: channels,
+		BasicComponent: component.NewBasicComponent(name),
+		channels:       channels,
 	}
-}
-
-func (cm *ChannelManager) GetName() string {
-	return cm.name
 }
 
 func (cm *ChannelManager) GetType() component.ComponentType {
@@ -34,6 +32,8 @@ func (cm *ChannelManager) GetType() component.ComponentType {
 }
 
 func (cm *ChannelManager) Initialize(ctx context.Context, registry *component.Registry) error {
+	cm.SetRegistry(registry)
+	cm.log(ctx, logger.InfoLevel, "channel manager initialized")
 	return nil
 }
 
@@ -71,8 +71,13 @@ func (cm *ChannelManager) List() []string {
 	return names
 }
 
-// TODO 这里 startAll 后需要接收各个 channels 的消息并且统一投递到 eventBus 中
 func (cm *ChannelManager) startAll(ctx context.Context) error {
+	cm.mu.RLock()
+	count := len(cm.channels)
+	cm.mu.RUnlock()
+	cm.log(ctx, logger.DebugLevel, "channels starting",
+		logger.Field{Key: "count", Value: count},
+	)
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	for _, ch := range cm.channels {
@@ -80,10 +85,19 @@ func (cm *ChannelManager) startAll(ctx context.Context) error {
 			return err
 		}
 	}
+	cm.log(ctx, logger.DebugLevel, "channels started",
+		logger.Field{Key: "count", Value: count},
+	)
 	return nil
 }
 
 func (cm *ChannelManager) stopAll(ctx context.Context) error {
+	cm.mu.RLock()
+	count := len(cm.channels)
+	cm.mu.RUnlock()
+	cm.log(ctx, logger.DebugLevel, "channels stopping",
+		logger.Field{Key: "count", Value: count},
+	)
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	for _, ch := range cm.channels {
@@ -92,4 +106,26 @@ func (cm *ChannelManager) stopAll(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (cm *ChannelManager) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
+	r := cm.Registry()
+	if r == nil {
+		return
+	}
+	lc := r.GetDefault(component.ComponentLogger)
+	if lc == nil {
+		return
+	}
+	l, ok := lc.(logger.Logger)
+	if !ok {
+		return
+	}
+	l.Log(ctx, logger.LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Module:    cm.GetName(),
+		Message:   msg,
+		Fields:    fields,
+	})
 }

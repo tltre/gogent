@@ -63,12 +63,15 @@ func NewDefaultLogger(cfg Config) *DefaultLogger {
 	}
 }
 
-func (l *DefaultLogger) Log(_ context.Context, entry LogEntry) {
+func (l *DefaultLogger) Log(ctx context.Context, entry LogEntry) {
 	if entry.Level < l.level {
 		return
 	}
-	fields := make([]zap.Field, 0, len(entry.Fields)+3)
+	fields := make([]zap.Field, 0, len(entry.Fields)+4)
 	fields = append(fields, zap.String("module", entry.Module))
+	if traceID := TraceIDFromContext(ctx); traceID != "" {
+		fields = append(fields, zap.String("traceId", traceID))
+	}
 	if entry.Duration > 0 {
 		fields = append(fields, zap.Duration("dur", entry.Duration))
 	}

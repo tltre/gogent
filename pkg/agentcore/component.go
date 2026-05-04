@@ -5,25 +5,19 @@ import (
 	"time"
 
 	"github.com/tltre/gagent/pkg/component"
-	"github.com/tltre/gagent/pkg/eventbus"
 	"github.com/tltre/gagent/pkg/logger"
 )
 
 type AgentRuntime struct {
-	Name  string
+	component.BasicComponent
 	Agent IAgentCore
-	reg   *component.Registry
 }
 
 func NewComponent(name string, agent IAgentCore) *AgentRuntime {
 	return &AgentRuntime{
-		Name:  name,
-		Agent: agent,
+		BasicComponent: component.NewBasicComponent(name),
+		Agent:          agent,
 	}
-}
-
-func (c *AgentRuntime) GetName() string {
-	return c.Name
 }
 
 func (c *AgentRuntime) GetType() component.ComponentType {
@@ -31,23 +25,23 @@ func (c *AgentRuntime) GetType() component.ComponentType {
 }
 
 func (c *AgentRuntime) Reg() *component.Registry {
-	return c.reg
+	return c.Registry()
 }
 
 func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Registry) error {
-	c.reg = registry
+	c.SetRegistry(registry)
 	c.Agent.SetAgentRuntime(c)
-	c.publishLog(ctx, logger.InfoLevel, "dependencies resolved")
+	c.log(ctx, logger.InfoLevel, "dependencies resolved")
 	return nil
 }
 
 func (c *AgentRuntime) Start(ctx context.Context) error {
-	c.publishLog(ctx, logger.InfoLevel, "agent started")
+	c.log(ctx, logger.InfoLevel, "agent started")
 	return nil
 }
 
 func (c *AgentRuntime) Stop(ctx context.Context) error {
-	c.publishLog(ctx, logger.InfoLevel, "agent stopped")
+	c.log(ctx, logger.InfoLevel, "agent stopped")
 	return nil
 }
 
@@ -89,7 +83,7 @@ func (c *AgentRuntime) Run(ctx context.Context, input Input) (Output, error) {
 		return Output{}, nil
 	}
 	ctx = logger.WithTraceID(ctx)
-	c.publishLog(ctx, logger.DebugLevel, "run started",
+	c.log(ctx, logger.DebugLevel, "run started",
 		logger.Field{Key: "messages", Value: len(input.Messages)},
 	)
 
@@ -98,17 +92,15 @@ func (c *AgentRuntime) Run(ctx context.Context, input Input) (Output, error) {
 	dur := time.Since(start)
 
 	if err != nil {
-		c.publishLog(ctx, logger.ErrorLevel, "run failed",
+		c.log(ctx, logger.ErrorLevel, "run failed",
 			logger.Field{Key: "error", Value: err.Error()},
 			logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
 		)
 		return output, err
 	}
 
-	traceID := logger.TraceIDFromContext(ctx)
-	c.publishLog(ctx, logger.InfoLevel, "run completed",
+	c.log(ctx, logger.InfoLevel, "run completed",
 		logger.Field{Key: "dur_ms", Value: dur.Milliseconds()},
-		logger.Field{Key: "traceId", Value: traceID},
 	)
 	return output, nil
 }
@@ -127,27 +119,24 @@ func (c *AgentRuntime) SetAgentCore(Agent IAgentCore) *AgentRuntime {
 	return c
 }
 
-func (c *AgentRuntime) publishLog(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
-	bus := c.reg.GetDefault(component.ComponentEventBus)
-	if bus == nil {
+func (c *AgentRuntime) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
+	r := c.Registry()
+	if r == nil {
 		return
 	}
-	eb, ok := bus.(eventbus.IEventBus)
+	lc := r.GetDefault(component.ComponentLogger)
+	if lc == nil {
+		return
+	}
+	l, ok := lc.(logger.Logger)
 	if !ok {
 		return
 	}
-	eb.Publish(ctx, "system.log", eventbus.Event{
-		Topic: "system.log",
-		Key:   "agentcore",
-		Payload: logger.LogEvent{
-			TraceID: logger.TraceIDFromContext(ctx),
-			Entry: logger.LogEntry{
-				Timestamp: time.Now(),
-				Level:     level,
-				Module:    "agentcore",
-				Message:   msg,
-				Fields:    fields,
-			},
-		},
+	l.Log(ctx, logger.LogEntry{
+		Timestamp: time.Now(),
+		Level:     level,
+		Module:    c.GetName(),
+		Message:   msg,
+		Fields:    fields,
 	})
 }
