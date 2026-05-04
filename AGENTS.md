@@ -4,7 +4,7 @@
 
 - **Module**: `github.com/tltre/gagent`
 - **Go**: 1.25.5
-- **Version**: v0.3.0
+- **Version**: v0.4.0-dev
 - **Entrypoint**: `cmd/gagent/main.go` — expects a YAML config path as first argument
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect)
 - **CI / lint / Makefile**: none
@@ -41,13 +41,80 @@ A **Registry** (`pkg/component/registry.go`) holds components and does topologic
 
 10 component types: `ComponentChannel`, `ComponentAgentCore`, `ComponentProvider`, `ComponentTool`, `ComponentHook`, `ComponentEventBus`, `ComponentContextManager`, `ComponentMemory`, `ComponentSandbox`, `ComponentLogger`.
 
+### BasicComponent (v0.3.1)
+
+All component wrappers embed `component.BasicComponent` to share common fields:
+
+```go
+type BasicComponent struct {
+    name string
+    reg  *Registry
+}
+
+func (b *BasicComponent) GetName() string
+func (b *BasicComponent) Registry() *Registry
+func (b *BasicComponent) SetRegistry(r *Registry)
+```
+
+Embedding eliminates per-component `name`/`reg` fields and `GetName()` boilerplate. Ten component types: `ComponentChannel`, `ComponentAgentCore`, `ComponentProvider`, `ComponentTool`, `ComponentHook`, `ComponentEventBus`, `ComponentContextManager`, `ComponentMemory`, `ComponentSandbox`, `ComponentLogger`.
+
+### Interface Layer (v0.4.0)
+
+The **interface layer** is NOT a Component — it is a top-level abstraction that drives the application's interaction loop. It starts after all backend Components are started and blocks until user exit.
+
+```go
+// pkg/iface/iface.go
+type Interface interface {
+    Run(ctx context.Context, reg *component.Registry) error
+}
+```
+
+**Key design decisions:**
+- Not registered in Registry; not a `component.Component`
+- Not a ComponentType; YAML driver dispatch does not apply
+- `Run()` is blocking — replaces `<-ctx.Done()` in `App.Run()`
+- Interface types are **mutually exclusive** per application instance
+
+**Three implementations** (phased rollout):
+
+| Type | YAML key | Description | Version |
+|------|----------|-------------|---------|
+| CLI | `type: cli` | stdin/stdout REPL | v0.4.2 |
+| TUI | `type: tui` | bubbletea interactive terminal | v0.4.3 |
+| HTTP | `type: http` | embedded web server (default) | v0.4.4 |
+
+### v0.4.x Roadmap
+
+```
+v0.4.1 — 框架搭建
+    ├── pkg/iface/iface.go          Interface 接口
+    ├── pkg/app/config.go           追加 InterfaceConfig
+    ├── pkg/app/builder.go          追加 buildInterface() + WithInterface()
+    └── pkg/app/app.go              追加 iface 字段 + Run() 改造
+
+v0.4.2 — 默认 CLI 实现
+    ├── pkg/iface/cli.go            DefaultCLI (bufio REPL)
+    ├── config/example.yaml         更新示例配置
+    └── cmd/gagent/main.go          适配 Interface 模式
+
+v0.4.3 — TUI 实现
+    ├── pkg/iface/tui.go            DefaultTUI (bubbletea)
+    └── 依赖: github.com/charmbracelet/bubbletea + bubbles
+
+v0.4.4 — HTTP 默认实现
+    ├── pkg/iface/http.go           DefaultHTTP (net/http)
+    └── 默认: iface.type 未配置时回退为 http
+```
+
 ### Builder pattern
 
-`app.Builder` reads YAML config → creates components → registers them → returns `*App`. Builder only handles `driver: "http"` and `driver: "process"`. Native (`driver: "native"`) components are skipped — they must be injected via `With*()` BuildOptions or provided by `componentDefaults` fallback.
+`app.Builder` reads YAML config → creates components → registers them → builds Interface → returns `*App`. Builder only handles `driver: "http"` and `driver: "process"`. Native (`driver: "native"`) components are skipped — they must be injected via `With*()` BuildOptions or provided by `componentDefaults` fallback.
 
 **Priority chain**: `With*` injection > YAML config > `componentDefaults` fallback.
 
 `registerDefaults()` provides out-of-box defaults for: Logger, EventBus, Memory, Sandbox.
+
+The Interface layer follows similar priority: `WithInterface()` > YAML `interface.type` > none (falls back to `<-ctx.Done()` bare event loop).
 
 ### YAML config format
 
@@ -77,14 +144,15 @@ Both transports use simplified JSON-RPC 2.0 with Gogent-defined method names and
 
 ### Observability
 
-All instrumentation flows through EventBus topic `system.log`:
+All instrumentation uses direct `Logger.Log()` obtained from Registry:
 
-- **AgentRuntime**: `Initialize`/`Start`/`Stop`/`Run` publish `LogEvent` with traceId via `c.EventBus.Publish("system.log", ...)`
-- **Transport**: `Call()` logs method + duration + success/failure via injected `client.Logger`
-- **LoggerComponent**: subscribes EventBus `system.log`, goroutine dispatches to underlying `Logger` (default: `DefaultLogger` wrapping zap)
-- **Remote daemon**: sends `logger/log` notification → main process `OnNotify` → routed to Logger
+- **AgentRuntime**: `Initialize`/`Start`/`Stop`/`Run` log via `log()` helper that routes to `reg.GetDefault(ComponentLogger).(logger.Logger).Log(ctx, entry)`.
+- **Sub-components**: ToolManager, ProviderComponent, SandboxComponent, HookManager, MemoryComponent, ContextManagerComponent, EventBusComponent, ChannelManager — all log lifecycle (Init/Start/Stop) and key business methods with timing.
+- **Transport**: `Call()` logs method + duration + success/failure via injected `client.Logger` (bridged to `logger.Logger` via `transportLogAdapter`).
+- **LoggerComponent**: wraps a `logger.Logger` (default: `DefaultLogger` wrapping zap), implements `logger.Logger` interface via `Log()` delegation.
+- **Remote daemon**: sends `logger/log` notification → main process `OnNotify` → routed to Logger.
 
-`WithTraceID(ctx)` generates a per-request traceId carried in context for cross-component correlation.
+`WithTraceID(ctx)` generates a per-request traceId carried in context. `DefaultLogger.Log()` auto-extracts traceId from context and appends it as a field.
 
 ### Registry Transparent Access (v0.3.0)
 
@@ -92,9 +160,8 @@ AgentRuntime no longer holds fixed fields for each subsystem. All dependency acc
 
 ```go
 type AgentRuntime struct {
-    Name  string
+    component.BasicComponent
     Agent IAgentCore
-    reg   *component.Registry
 }
 
 func (c *AgentRuntime) Reg() *component.Registry
@@ -145,3 +212,7 @@ Builder registers the lookup handler on all stdio transports via `StdioTransport
 4. **Process* implementations use LazyTransport**: transports auto-start on first `Call()`. Always use `client.WrapLazy()` for new process implementations.
 
 5. **Driver constants**: Use `DriverHTTP`/`DriverProcess`/`DriverNative` from `pkg/app/builder.go`, never hardcoded strings.
+
+6. **Interface layer is NOT a Component**: `Interface` implementations do not go through Registry, do not have `Initialize`/`Start`/`Stop` lifecycle, and are not declared in YAML `components[]`. They are a top-level application concern, started by `App.Run()` after all Components are ready.
+
+7. **Interface types are mutually exclusive**: Only one Interface implementation (CLI, TUI, or HTTP) runs per application instance. No multi-interface per instance.
