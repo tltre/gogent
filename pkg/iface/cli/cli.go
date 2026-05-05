@@ -56,7 +56,7 @@ func (c *DefaultCLI) Unregister(path string) {
 	}
 }
 
-func (c *DefaultCLI) ensureDefaults() {
+func (c *DefaultCLI) EnsureDefaults() {
 	if _, exists := c.commands["chat"]; !exists && !c.unregistered["chat"] {
 		c.Register("chat", buildChat(c))
 	}
@@ -68,7 +68,7 @@ func (c *DefaultCLI) ensureDefaults() {
 	}
 }
 
-func (c *DefaultCLI) buildRoot() *cobra.Command {
+func (c *DefaultCLI) BuildRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "agent",
 		Short: "Gogent agent CLI",
@@ -84,22 +84,35 @@ func (c *DefaultCLI) buildRoot() *cobra.Command {
 
 	nodes := make(map[string]*cobra.Command)
 
+	// First pass: create all nodes (placeholders for intermediate, real for leaves)
 	for _, path := range paths {
-		cmd := c.commands[path]
 		parts := strings.Split(path, ".")
-		cmd.Use = parts[len(parts)-1]
+		for i := 0; i < len(parts); i++ {
+			prefix := strings.Join(parts[:i+1], ".")
+			if _, exists := nodes[prefix]; exists {
+				continue
+			}
+			if i == len(parts)-1 {
+				cmd := c.commands[path]
+				cmd.Use = parts[i]
+				nodes[prefix] = cmd
+			} else {
+				nodes[prefix] = &cobra.Command{Use: parts[i]}
+			}
+		}
+	}
 
+	// Second pass: wire parent-child relationships
+	for prefix, node := range nodes {
+		parts := strings.Split(prefix, ".")
 		if len(parts) == 1 {
-			root.AddCommand(cmd)
+			root.AddCommand(node)
 		} else {
 			parentPath := strings.Join(parts[:len(parts)-1], ".")
 			if parent, ok := nodes[parentPath]; ok {
-				parent.AddCommand(cmd)
-			} else {
-				root.AddCommand(cmd)
+				parent.AddCommand(node)
 			}
 		}
-		nodes[path] = cmd
 	}
 
 	if chatCmd, exists := c.commands["chat"]; exists {
@@ -111,9 +124,9 @@ func (c *DefaultCLI) buildRoot() *cobra.Command {
 
 func (c *DefaultCLI) Run(ctx context.Context, reg *component.Registry) error {
 	c.reg = reg
-	c.ensureDefaults()
+	c.EnsureDefaults()
 
-	root := c.buildRoot()
+	root := c.BuildRoot()
 
 	if c.Banner != "" {
 		fmt.Println(c.Banner)
