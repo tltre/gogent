@@ -152,7 +152,7 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 		})
 		return channel.NewComponent(cc.Name, ch), nil
 	default:
-		return nil, fmt.Errorf("unknown channel driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -173,7 +173,7 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 		})
 		return agentcore.NewComponent(cc.Name, core), nil
 	default:
-		return nil, fmt.Errorf("unknown agentcore driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -194,7 +194,7 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 		})
 		return provider.NewComponent(cc.Name, p), nil
 	default:
-		return nil, fmt.Errorf("unknown provider driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -289,7 +289,7 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 		})
 		return eventbus.NewComponent(cc.Name, eb), nil
 	default:
-		return nil, fmt.Errorf("unknown eventbus driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -310,7 +310,7 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
-		return nil, fmt.Errorf("unknown contextmanager driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -331,7 +331,7 @@ func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 		})
 		return memory.NewComponent(cc.Name, m), nil
 	default:
-		return nil, fmt.Errorf("unknown memory driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 
@@ -359,7 +359,7 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 		})
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	default:
-		return nil, fmt.Errorf("unknown sandbox driver: %s", DriverType(cc.Driver))
+		return nil, nil
 	}
 }
 

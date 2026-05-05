@@ -24,9 +24,9 @@ type Config struct {
 }
 
 type InterfaceConfig struct {
-	Type string       `yaml:"type"`           // "cli" | "tui" | "http"
-	CLI  CLIConfig    `yaml:"cli,omitempty"`
-	HTTP HTTPConfig   `yaml:"http,omitempty"`
+	Type string     `yaml:"type"` // "cli" | "tui" | "http"
+	CLI  CLIConfig  `yaml:"cli,omitempty"`
+	HTTP HTTPConfig `yaml:"http,omitempty"`
 }
 
 type CLIConfig struct {
@@ -39,15 +39,11 @@ type HTTPConfig struct {
 }
 
 type ComponentConfig struct {
-	Name         string                   `yaml:"name"`
-	Type         string                   `yaml:"type"`
-	Driver       string                   `yaml:"driver"`
-	Config       map[string]any           `yaml:"config,omitempty"`
-	Dependencies map[string]DependencyRef `yaml:"dependencies,omitempty"`
-}
-
-type DependencyRef struct {
-	Name string `yaml:"name"`
+	Name         string            `yaml:"name"`
+	Type         string            `yaml:"type"`
+	Driver       string            `yaml:"driver"`
+	Config       map[string]any    `yaml:"config,omitempty"`
+	Dependencies map[string]string `yaml:"dependencies,omitempty"`
 }
 
 type ChannelConfig struct {
