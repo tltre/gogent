@@ -17,6 +17,7 @@ import (
 	"github.com/tltre/gagent/pkg/eventbus"
 	"github.com/tltre/gagent/pkg/hook"
 	"github.com/tltre/gagent/pkg/iface"
+	"github.com/tltre/gagent/pkg/iface/cli"
 	"github.com/tltre/gagent/pkg/logger"
 	"github.com/tltre/gagent/pkg/memory"
 	"github.com/tltre/gagent/pkg/provider"
@@ -32,9 +33,10 @@ const (
 )
 
 type Builder struct {
-	config   *Config
-	registry *component.Registry
-	iface    iface.Interface
+	config     *Config
+	registry   *component.Registry
+	iface      iface.Interface
+	cliEntries []cli.CommandEntry
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -482,7 +484,9 @@ func (b *Builder) registerDefaults() {
 func (b *Builder) buildInterface() iface.Interface {
 	switch b.config.Interface.Type {
 	case "cli":
-		return iface.NewDefaultCLI(b.config.Interface.CLI.Banner, b.config.Interface.CLI.Prompt)
+		c := cli.New(b.config.Interface.CLI.Banner, b.config.Interface.CLI.Prompt)
+		cli.RegisterByPath(c, b.cliEntries)
+		return c
 	case "tui", "http":
 		// v0.4.3+, currently nil — falls back to blocking bare event loop
 		return nil
@@ -518,6 +522,13 @@ type BuildOption func(*Builder) error
 func WithInterface(i iface.Interface) BuildOption {
 	return func(b *Builder) error {
 		b.iface = i
+		return nil
+	}
+}
+
+func WithCLICommand(entries ...cli.CommandEntry) BuildOption {
+	return func(b *Builder) error {
+		b.cliEntries = append(b.cliEntries, entries...)
 		return nil
 	}
 }
