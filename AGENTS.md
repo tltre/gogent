@@ -2,10 +2,11 @@
 
 ## Project at a Glance
 
-- **Module**: `github.com/tltre/gagent`
+- **Module**: `github.com/tltre/gogent`
 - **Go**: 1.25.5
-- **Version**: v0.4.2
-- **Entrypoint**: `cmd/gagent/main.go` — expects a YAML config path as first argument
+- **Version**: v0.5.0-dev
+- **Entrypoint**: `cmd/gagent/main.go` — cobra-based CLI (`gogent run/status/doctor/...`)
+- **Binary**: `gogent`
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect), `github.com/spf13/cobra` (direct)
 - **CI / lint / Makefile**: none
 
@@ -116,7 +117,96 @@ v0.4.3 — TUI 实现
 v0.4.4 — HTTP 默认实现
     ├── pkg/iface/http.go           DefaultHTTP (net/http)
     └── 默认: iface.type 未配置时回退为 http
-    └── ⚠ deferred — 条件不成熟，待 Provider/AgentCore 核心流程稳定后再实现
+     └── ⚠ deferred — 条件不成熟，待 Provider/AgentCore 核心流程稳定后再实现
+```
+
+### Management Channel (v0.5.0)
+
+The **management channel** is a framework-internal HTTP server that runs alongside the agent application after all backend Components are started. It exposes a REST API for CLI/TUI/HTTP management tools to observe and interact with the running agent.
+
+```go
+// internal/mgmt/server.go
+type Server struct { ... }
+func Listen(addr string, reg *component.Registry) *Server  // goroutine
+func (s *Server) Shutdown(ctx context.Context) error
+```
+
+**Key design decisions:**
+- Runs inside `app.Run()` via goroutine (non-blocking alongside application Interface)
+- Listens on localhost only (loopback)
+- Does NOT import `pkg/iface/` — completely independent concern
+- Placed in `internal/mgmt/` — not a public package, framework-internal only
+- Port discovery via runtime file (`~/.gogent/<name>.port` or `./.gogent.pid`)
+- `--port` flag on `gogent run` sets the listen address (default `:9090`)
+
+**HTTP API endpoints:**
+
+| Endpoint | Description | v0.5.0 |
+|----------|-------------|--------|
+| `GET /api/v1/registry` | All components: name, type, status | ✅ |
+| `GET /api/v1/health` | Per-component health checks | ✅ |
+| `GET /api/v1/logs` | SSE real-time log stream | ✅ |
+| `GET /api/v1/info` | Agent name, version, uptime | ✅ |
+| `POST /api/v1/tools/exec` | Execute a tool directly | TODO |
+| `GET /api/v1/sessions` | Session list | TODO |
+
+### v0.5.0 Roadmap
+
+The framework CLI (`gogent`) targets DevOps/operations workflows — managing and observing a running agent application (analogous to `k9s` for Kubernetes or `rabbitmqadmin` for RabbitMQ).
+
+```
+v0.5.0 — 框架管理与运维 CLI
+    ├── cmd/gagent/                  框架二进制入口
+    │   ├── main.go                  cobra root command + --port 全局 flag
+    │   └── cmd/
+    │       ├── root.go              root command + global flags
+    │       ├── run.go               run <config> [--port] [-i]
+    │       ├── status.go            status — 组件状态表
+    │       ├── doctor.go            doctor — 逐一健康检查
+    │       ├── logs.go              logs [--follow] — 实时日志流
+    │       ├── validate.go          validate <config> — 离线 YAML 校验
+    │       ├── inspect.go           inspect <config> — 离线配置展示
+    │       └── version.go           version — 框架版本信息
+    └── internal/mgmt/
+        ├── server.go                HTTP management server
+        ├── handler.go               REST API handlers
+        ├── client.go                HTTP client for CLI subcommands
+        └── types.go                 shared response types
+```
+
+**Framework CLI command tree:**
+
+```
+gogent [--port :9090] <command> [args]
+
+  run       <config> [-i]         启动 agent + HTTP mgmt server
+  status                           组件状态表
+  doctor                           逐一健康检查
+  logs      [--follow]             实时日志流 (SSE)
+  validate  <config>               离线校验 YAML
+  inspect   <config>               离线展示解析后配置
+  version                          框架版本
+
+--port  flag: 仅 run 使用，指定管理端口 (默认 :9090)
+                 后续 status/doctor/logs 自动读取运行时端口文件
+-i   flag: 启动 TUI 模式 (v0.5.0 占位)
+```
+
+**三层体系:**
+
+```
+┌──────────────────────────────────────────────┐
+│ 框架 CLI (v0.5.0)                            │
+│ gogent run | status | doctor | logs | ...    │
+│ 管理运行中的 agent，通过 internal/mgmt 交互    │
+├──────────────────────────────────────────────┤
+│ 管理通道 (v0.5.0)                            │
+│ internal/mgmt/ — localhost HTTP server        │
+│ /api/v1/registry | health | logs | info       │
+├──────────────────────────────────────────────┤
+│ 应用接口 (v0.4.2)                            │
+│ pkg/iface/ — 面向终端用户的 CLI/TUI/HTTP      │
+└──────────────────────────────────────────────┘
 ```
 
 ### CLI 命令体系设计 (v0.4.2)
@@ -282,3 +372,7 @@ Builder registers the lookup handler on all stdio transports via `StdioTransport
 7. **Interface types are mutually exclusive**: Only one Interface implementation (CLI, TUI, or HTTP) runs per application instance. No multi-interface per instance.
 
 8. **CLI commands via flat map + lazy tree**: `DefaultCLI` stores all commands (default + user-injected + prebuilt) in a flat `map[string]*cobra.Command` keyed by dot-separated path (`"config.show"`). The cobra command tree is lazily built via `buildRoot()` on each `Run()` call. Unregister uses prefix match on the flat map. `ensureDefaults()` skips paths already in the map or explicitly unregistered.
+
+9. **管理通道放在 `internal/mgmt/`**: 不是 `pkg/` 下的公共包。CLI 子命令通过 HTTP client 连接已在运行的 agent 的管理端口。端口发现通过 `--port` flag 指定，写入运行时文件供后续命令自动读取。
+
+10. **Two distinct CLI layers**: The **application CLI** (`pkg/iface/cli/`) serves end-user interaction (chat/run/version); the **framework CLI** (`cmd/gagent/cmd/`) serves DevOps management (status/doctor/logs). They operate at different layers and do not overlap.

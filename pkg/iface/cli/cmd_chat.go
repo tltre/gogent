@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gagent/pkg/agentcore"
-	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gogent/pkg/agentcore"
+	"github.com/tltre/gogent/pkg/component"
 )
 
 func buildChat(cli *DefaultCLI) *cobra.Command {

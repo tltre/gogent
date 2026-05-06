@@ -1,4 +1,4 @@
-module github.com/tltre/gagent
+module github.com/tltre/gogent
 
 go 1.25.5
 

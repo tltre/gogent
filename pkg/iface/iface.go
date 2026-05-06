@@ -3,7 +3,7 @@ package iface
 import (
 	"context"
 
-	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gogent/pkg/component"
 )
 
 type Interface interface {

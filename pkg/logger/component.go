@@ -3,7 +3,7 @@ package logger
 import (
 	"context"
 
-	"github.com/tltre/gagent/pkg/component"
+	"github.com/tltre/gogent/pkg/component"
 )
 
 var defaultLogger Logger = NewDefault()

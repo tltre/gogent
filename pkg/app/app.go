@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tltre/gagent/pkg/component"
-	"github.com/tltre/gagent/pkg/iface"
+	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/iface"
 )
 
 type App struct {

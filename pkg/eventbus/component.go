@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/tltre/gagent/pkg/component"
-	"github.com/tltre/gagent/pkg/logger"
+	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/logger"
 )
 
 type EventBusComponent struct {

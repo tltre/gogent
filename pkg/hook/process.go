@@ -3,7 +3,7 @@ package hook
 import (
 	"context"
 
-	"github.com/tltre/gagent/internal/client"
+	"github.com/tltre/gogent/internal/client"
 )
 
 type ProcessHookConfig struct {
