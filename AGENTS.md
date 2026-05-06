@@ -4,9 +4,9 @@
 
 - **Module**: `github.com/tltre/gagent`
 - **Go**: 1.25.5
-- **Version**: v0.4.0-dev
+- **Version**: v0.4.2
 - **Entrypoint**: `cmd/gagent/main.go` — expects a YAML config path as first argument
-- **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect)
+- **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect), `github.com/spf13/cobra` (direct)
 - **CI / lint / Makefile**: none
 
 ## Development Commands
@@ -15,9 +15,10 @@
 go build ./...                              # build all packages
 go vet ./...                                # static analysis
 go test ./tests/native/ -v -timeout 30s     # native mock tests (13)
-go test ./tests/stdio/ -v -timeout 60s      # stdio round-trip tests (11)
+go test ./tests/stdio/ -v -timeout 60s      # stdio round-trip tests (13)
 go test ./tests/http/ -v -timeout 30s       # http round-trip tests (9)
-go test ./tests/integration/ -v -timeout 60s # full integration test
+go test ./tests/integration/ -v -timeout 60s # full integration test (1)
+go test ./tests/cli/ -v -timeout 30s        # CLI framework tests (19)
 ```
 
 ## Architecture
@@ -79,9 +80,9 @@ type Interface interface {
 
 | Type | YAML key | Description | Version |
 |------|----------|-------------|---------|
-| CLI | `type: cli` | stdin/stdout REPL | v0.4.2 |
-| TUI | `type: tui` | bubbletea interactive terminal | v0.4.3 |
-| HTTP | `type: http` | embedded web server (default) | v0.4.4 |
+| CLI | `type: cli` | cobra-based extensible command tree | v0.4.2 |
+| TUI | `type: tui` | bubbletea interactive terminal | deferred |
+| HTTP | `type: http` | embedded web server | deferred |
 
 ### v0.4.x Roadmap
 
@@ -110,10 +111,12 @@ v0.4.2 — CLI 命令体系
 v0.4.3 — TUI 实现
     ├── pkg/iface/tui.go            DefaultTUI (bubbletea)
     └── 依赖: github.com/charmbracelet/bubbletea + bubbles
+    └── ⚠ deferred — 条件不成熟，待 Provider/AgentCore 核心流程稳定后再实现
 
 v0.4.4 — HTTP 默认实现
     ├── pkg/iface/http.go           DefaultHTTP (net/http)
     └── 默认: iface.type 未配置时回退为 http
+    └── ⚠ deferred — 条件不成熟，待 Provider/AgentCore 核心流程稳定后再实现
 ```
 
 ### CLI 命令体系设计 (v0.4.2)
