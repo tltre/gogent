@@ -4,7 +4,7 @@
 
 - **Module**: `github.com/tltre/gogent`
 - **Go**: 1.25.5
-- **Version**: v0.5.0
+- **Version**: v0.6.0-dev
 - **Entrypoint**: `cmd/gogent/main.go` — cobra-based CLI (`gogent run/status/doctor/...`)
 - **Binary**: `gogent`
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect), `github.com/spf13/cobra` (direct)
@@ -212,6 +212,98 @@ gogent [--port 9090] <command> [args]
 │ 应用接口 (v0.4.2)                            │
 │ pkg/iface/ — 面向终端用户的 CLI/TUI/HTTP      │
 └──────────────────────────────────────────────┘
+```
+
+### v0.6.0 Roadmap — 多 Agent 守护进程管理
+
+The framework CLI expands from single-agent management to multi-agent lifecycle management. A central **daemon process** tracks all agent instances, assigns ports, and monitors child process health. All CLI commands (serve/run/stop/list/status) interact with the daemon.
+
+**Architecture:**
+
+```
+┌──────────────────────────────────────────────┐
+│ gogent daemon (守护进程，:9090)                │
+│ Daemon 端点 (仅 agent 生命周期)                │
+│ POST /api/v1/agents         加载 agent        │
+│ GET  /api/v1/agents         列出所有 agent     │
+│ DELETE /api/v1/agents/{n}   停止 agent         │
+│                                              │
+│ agent registry (in-memory)                    │
+│ ┌──────────┬──────────┐                      │
+│ │ agent-a  │ agent-b  │  独立 OS 子进程        │
+│ │ :9091    │ :9092    │  各自的 Registry/iface │
+│ └──────────┴──────────┘                      │
+└──────────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+- Daemon auto-starts on first `serve`/`run` call — transparent to user
+- Agents are independent OS sub-processes, not goroutines — full process isolation
+- Daemon crash does NOT affect running agents — recoverable via PID probing
+- Per-agent mgmt endpoints (registry/health/logs) remain on each agent's own port
+- Port allocation: daemon assigns from a free-port pool, `--port` overrides
+
+**Two mgmt endpoint layers:**
+
+| Layer | Endpoints | Provider |
+|-------|-----------|----------|
+| Daemon | `POST/GET /api/v1/agents`, `DELETE /api/v1/agents/{name}` | daemon process |
+| Agent | `/api/v1/registry`, `/health`, `/logs`, `/info`, `/tools/exec`, `/sessions` | each agent process |
+
+**CLI command tree:**
+
+```
+gogent daemon  [--port 9090]               显式启动守护进程
+gogent serve   <config> [--port 9090]      启动 agent（自动启 daemon），立即返回
+gogent run     <config> [--port 9090]      启动 agent + attach REPL（前台）
+gogent stop    <name>                      停止指定 agent
+gogent restart <name>                      stop + serve
+gogent list                                列出所有 agent（NAME/PORT/PID/STATUS）
+gogent status  [name]                      无参=list；有参=查 agent 组件表
+gogent doctor  [name]                      agent 健康检查
+gogent logs    [name] [--follow]           agent 日志流
+gogent validate/inspect/version            不变
+```
+
+**Key flows:**
+
+```
+gogent serve agent-a.yaml
+  → check daemon alive → if not: fork gogent daemon --port 9090
+  → POST /api/v1/agents {config:"agent-a.yaml"}
+  → daemon: allocate port → fork gogent agent --config ... --port 9091
+  → wait for agent ready → register in memory → return {name, port, pid}
+
+gogent stop agent-a
+  → DELETE /api/v1/agents/agent-a
+  → daemon: SIGTERM child process → remove from registry
+
+gogent status agent-a
+  → GET /api/v1/agents → find agent-a port=9091
+  → GET :9091/api/v1/registry → print component table
+```
+
+**Internal subcommand: `gogent agent`** — hidden from help, used only by daemon to fork child processes. Takes `--config`, `--port`, `--daemon` flags.
+
+```
+v0.6.0 — 多 Agent 守护进程管理
+    ├── cmd/gogent/cmd/
+    │   ├── daemon.go              守护进程入口
+    │   ├── agent.go               内部子命令（daemon fork 用）
+    │   ├── list.go                列出所有 agent
+    │   ├── stop.go                停止 agent
+    │   ├── restart.go             重启 agent
+    │   ├── serve.go               重写 — 连 daemon 加载 agent
+    │   ├── run.go                 重写 — 同上 + attach REPL
+    │   ├── status.go              修改 — 支持 [name] 参数
+    │   ├── doctor.go              修改 — 支持 [name] 参数
+    │   └── logs.go                修改 — 支持 [name] 参数
+    └── internal/mgmt/
+        ├── daemon.go              新建 — agent 注册表、fork、PID 监控
+        ├── server.go              修改 — 新增 daemon 层 agents 端点
+        ├── client.go              修改 — LoadAgent / ListAgents / StopAgent
+        ├── port.go                修改 — 自动分配空闲端口
+        └── types.go               修改 — AgentInfo 类型
 ```
 
 ### CLI 命令体系设计 (v0.4.2)
