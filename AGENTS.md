@@ -4,11 +4,12 @@
 
 - **Module**: `github.com/tltre/gogent`
 - **Go**: 1.25.5
-- **Version**: v0.5.0-dev
-- **Entrypoint**: `cmd/gagent/main.go` — cobra-based CLI (`gogent run/status/doctor/...`)
+- **Version**: v0.5.0
+- **Entrypoint**: `cmd/gogent/main.go` — cobra-based CLI (`gogent run/status/doctor/...`)
 - **Binary**: `gogent`
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect), `github.com/spf13/cobra` (direct)
 - **CI / lint / Makefile**: none
+- **Test helper**: `cmd/daemon/` — stdio daemon binary for end-to-end smoke testing
 
 ## Development Commands
 
@@ -137,7 +138,7 @@ func (s *Server) Shutdown(ctx context.Context) error
 - Does NOT import `pkg/iface/` — completely independent concern
 - Placed in `internal/mgmt/` — not a public package, framework-internal only
 - Port discovery via runtime file (`~/.gogent/<name>.port` or `./.gogent.pid`)
-- `--port` flag on `gogent run` sets the listen address (default `:9090`)
+- `--port` flag on `gogent run` sets the listen address (default `9090`)
 
 **HTTP API endpoints:**
 
@@ -147,8 +148,8 @@ func (s *Server) Shutdown(ctx context.Context) error
 | `GET /api/v1/health` | Per-component health checks | ✅ |
 | `GET /api/v1/logs` | SSE real-time log stream | ✅ |
 | `GET /api/v1/info` | Agent name, version, uptime | ✅ |
-| `POST /api/v1/tools/exec` | Execute a tool directly | TODO |
-| `GET /api/v1/sessions` | Session list | TODO |
+| `POST /api/v1/tools/exec` | Execute a tool directly | ✅ |
+| `GET /api/v1/sessions` | Session list | ✅ |
 
 ### v0.5.0 Roadmap
 
@@ -156,11 +157,12 @@ The framework CLI (`gogent`) targets DevOps/operations workflows — managing an
 
 ```
 v0.5.0 — 框架管理与运维 CLI
-    ├── cmd/gagent/                  框架二进制入口
+    ├── cmd/gogent/                  框架二进制入口
     │   ├── main.go                  cobra root command + --port 全局 flag
     │   └── cmd/
     │       ├── root.go              root command + global flags
     │       ├── run.go               run <config> [--port] [-i]
+    │       ├── serve.go             serve <config> [--port] — 后台服务模式
     │       ├── status.go            status — 组件状态表
     │       ├── doctor.go            doctor — 逐一健康检查
     │       ├── logs.go              logs [--follow] — 实时日志流
@@ -171,14 +173,16 @@ v0.5.0 — 框架管理与运维 CLI
         ├── server.go                HTTP management server
         ├── handler.go               REST API handlers
         ├── client.go                HTTP client for CLI subcommands
-        └── types.go                 shared response types
+        ├── types.go                 shared response types
+        └── port.go                  runtime port file read/write
 ```
 
 **Framework CLI command tree:**
 
 ```
-gogent [--port :9090] <command> [args]
+gogent [--port 9090] <command> [args]
 
+  serve     <config>               前台 server 模式（daemon）
   run       <config> [-i]         启动 agent + HTTP mgmt server
   status                           组件状态表
   doctor                           逐一健康检查
@@ -187,7 +191,7 @@ gogent [--port :9090] <command> [args]
   inspect   <config>               离线展示解析后配置
   version                          框架版本
 
---port  flag: 仅 run 使用，指定管理端口 (默认 :9090)
+--port  flag: 指定管理端口 (默认 9090)，数字格式自动加冒号前缀
                  后续 status/doctor/logs 自动读取运行时端口文件
 -i   flag: 启动 TUI 模式 (v0.5.0 占位)
 ```
@@ -197,12 +201,13 @@ gogent [--port :9090] <command> [args]
 ```
 ┌──────────────────────────────────────────────┐
 │ 框架 CLI (v0.5.0)                            │
-│ gogent run | status | doctor | logs | ...    │
+│ gogent run | serve | status | doctor | logs   │
 │ 管理运行中的 agent，通过 internal/mgmt 交互    │
 ├──────────────────────────────────────────────┤
 │ 管理通道 (v0.5.0)                            │
 │ internal/mgmt/ — localhost HTTP server        │
 │ /api/v1/registry | health | logs | info       │
+│ /api/v1/tools/exec | sessions                 │
 ├──────────────────────────────────────────────┤
 │ 应用接口 (v0.4.2)                            │
 │ pkg/iface/ — 面向终端用户的 CLI/TUI/HTTP      │
@@ -375,4 +380,4 @@ Builder registers the lookup handler on all stdio transports via `StdioTransport
 
 9. **管理通道放在 `internal/mgmt/`**: 不是 `pkg/` 下的公共包。CLI 子命令通过 HTTP client 连接已在运行的 agent 的管理端口。端口发现通过 `--port` flag 指定，写入运行时文件供后续命令自动读取。
 
-10. **Two distinct CLI layers**: The **application CLI** (`pkg/iface/cli/`) serves end-user interaction (chat/run/version); the **framework CLI** (`cmd/gagent/cmd/`) serves DevOps management (status/doctor/logs). They operate at different layers and do not overlap.
+10. **Two distinct CLI layers**: The **application CLI** (`pkg/iface/cli/`) serves end-user interaction (chat/run/version); the **framework CLI** (`cmd/gogent/cmd/`) serves DevOps management (status/doctor/logs). They operate at different layers and do not overlap.
