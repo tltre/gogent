@@ -132,6 +132,6 @@ func (c *DefaultCLI) Run(ctx context.Context, reg *component.Registry) error {
 		fmt.Println(c.Banner)
 	}
 
-	root.SetArgs(nil)
+	root.SetArgs([]string{})
 	return root.ExecuteContext(ctx)
 }
