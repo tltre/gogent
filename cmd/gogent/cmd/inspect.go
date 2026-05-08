@@ -24,7 +24,10 @@ var inspectCmd = &cobra.Command{
 			return fmt.Errorf("parse config: %w", err)
 		}
 
-		out, _ := json.MarshalIndent(cfg, "", "  ")
+		out, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal config: %w", err)
+		}
 		fmt.Println(string(out))
 		return nil
 	},

@@ -12,7 +12,8 @@ var rootCmd = &cobra.Command{
 	Use:   "gogent",
 	Short: "Gogent framework CLI — manage and observe agent applications",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if port != "" && !strings.HasPrefix(port, ":") {
+		// FIXME: only handles bare port numbers (9090), not host:port (localhost:9090)
+		if port != "" && !strings.HasPrefix(port, ":") && !strings.Contains(port, ":") {
 			port = ":" + port
 		}
 		return nil

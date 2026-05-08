@@ -55,7 +55,10 @@ func serveAgent(configPath string, mgmtPort string) error {
 	srv := mgmt.Listen(mgmtPort, application.Registry())
 	defer srv.Shutdown(context.Background())
 
-	mgmt.WritePortFile(mgmtPort, "agent")
+	if err := mgmt.WritePortFile(mgmtPort, "agent"); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: could not write port file: %v\n", err)
+	}
+	// FIXME: agent name should come from config, not hardcoded "agent"
 	defer mgmt.RemovePortFile()
 
 	fmt.Fprintf(os.Stderr, "agent serving on %s  pid=%d\n", mgmtPort, os.Getpid())

@@ -19,6 +19,7 @@ var logsCmd = &cobra.Command{
 		client := mgmt.NewClient(mgmtPort)
 
 		ctx := context.Background()
+		// FIXME: non-follow logs should use a request-scoped context with timeout
 		if follow {
 			ctx = cmd.Context()
 		}

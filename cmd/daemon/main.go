@@ -1,5 +1,10 @@
 package main
 
+// FIXME: this entire file is a mock daemon for smoke-testing only.
+// All 40+ response strings are hardcoded placeholders. Not for production use.
+// Each dispatch function returns stub data; real daemons must implement
+// actual business logic for each component type.
+
 import (
 	"context"
 	"encoding/json"

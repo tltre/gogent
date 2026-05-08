@@ -12,6 +12,9 @@ import (
 	"github.com/tltre/gogent/pkg/component"
 )
 
+// Version is the framework version. Set via ldflags at build time.
+var Version = "0.5.0-dev"
+
 type Server struct {
 	http    *http.Server
 	reg     *component.Registry
@@ -37,7 +40,9 @@ func Listen(addr string, reg *component.Registry) *Server {
 
 	go func() {
 		fmt.Fprintf(os.Stderr, "[mgmt] listening on %s\n", addr)
-		s.http.ListenAndServe()
+		if err := s.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "[mgmt] server error: %v\n", err)
+		}
 	}()
 
 	return s
@@ -58,6 +63,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	var list []ComponentInfo
 	for _, typ := range types {
 		for _, comp := range s.reg.GetByType(typ) {
+			// FIXME: derive real lifecycle status from component (uninitialized/initialized/started/stopped)
 			list = append(list, ComponentInfo{
 				Name:   comp.GetName(),
 				Type:   string(comp.GetType()),
@@ -66,7 +72,11 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, list)
+	if err := json.NewEncoder(w).Encode(list); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -75,11 +85,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		component.ComponentTool, component.ComponentEventBus,
 		component.ComponentContextManager, component.ComponentMemory,
 		component.ComponentSandbox,
+		// FIXME: add Channel, Hook, Logger once health-check interfaces are defined
 	}
 
 	var results []HealthResult
 	for _, typ := range types {
 		for _, comp := range s.reg.GetByType(typ) {
+			// FIXME: call component-specific health/ping interface instead of hardcoding "ok"
 			results = append(results, HealthResult{
 				Component: comp.GetName(),
 				Status:    "ok",
@@ -87,21 +99,31 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, results)
+	if err := json.NewEncoder(w).Encode(results); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	// FIXME: agent name should come from app config, not hardcoded
 	info := InfoResponse{
 		Name:      "gogent",
-		Version:   "0.5.0-dev",
+		Version:   Version,
 		GoVersion: runtime.Version(),
 		UptimeSec: int64(time.Since(s.started).Seconds()),
 	}
 
-	writeJSON(w, http.StatusOK, info)
+	if err := json.NewEncoder(w).Encode(info); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	// FIXME: wire up to actual logger component for real-time log streaming
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -117,10 +139,3 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	<-r.Context().Done()
 }
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-

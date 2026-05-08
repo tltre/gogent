@@ -31,6 +31,8 @@ func init() {
 	runCmd.Flags().BoolVarP(&tuiMode, "tui", "i", false, "start in TUI mode (placeholder)")
 }
 
+// FIXME: runAgent and serveAgent share ~80% duplicate initialization logic.
+// Extract shared build+start agent helper once the interface stabilizes.
 func runAgent(configPath string, mgmtPort string) error {
 	builder, err := app.NewBuilder(configPath)
 	if err != nil {
@@ -65,7 +67,10 @@ func runAgent(configPath string, mgmtPort string) error {
 	srv := mgmt.Listen(mgmtPort, application.Registry())
 	defer srv.Shutdown(context.Background())
 
-	mgmt.WritePortFile(mgmtPort, "agent")
+	if err := mgmt.WritePortFile(mgmtPort, "agent"); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: could not write port file: %v\n", err)
+	}
+	// FIXME: agent name should come from config, not hardcoded "agent"
 	defer mgmt.RemovePortFile()
 
 	if iface := application.Interface(); iface != nil {
