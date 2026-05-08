@@ -12,26 +12,16 @@ import (
 	"github.com/tltre/gogent/pkg/app"
 )
 
-var tuiMode bool
-
-var runCmd = &cobra.Command{
-	Use:   "run <config.yaml>",
-	Short: "Start agent with interactive CLI REPL",
+var serveCmd = &cobra.Command{
+	Use:   "serve <config.yaml>",
+	Short: "Start agent as a background service (no REPL)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if tuiMode {
-			fmt.Fprintln(os.Stderr, "TUI mode not yet implemented (v0.5.0+)")
-			return nil
-		}
-		return runAgent(args[0], port)
+		return serveAgent(args[0], port)
 	},
 }
 
-func init() {
-	runCmd.Flags().BoolVarP(&tuiMode, "tui", "i", false, "start in TUI mode (placeholder)")
-}
-
-func runAgent(configPath string, mgmtPort string) error {
+func serveAgent(configPath string, mgmtPort string) error {
 	builder, err := app.NewBuilder(configPath)
 	if err != nil {
 		return fmt.Errorf("create builder: %w", err)
@@ -68,14 +58,8 @@ func runAgent(configPath string, mgmtPort string) error {
 	mgmt.WritePortFile(mgmtPort, "agent")
 	defer mgmt.RemovePortFile()
 
-	if iface := application.Interface(); iface != nil {
-		err := iface.Run(ctx, application.Registry())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Application error: %v\n", err)
-		}
-	} else {
-		<-ctx.Done()
-	}
+	fmt.Fprintf(os.Stderr, "agent serving on %s  pid=%d\n", mgmtPort, os.Getpid())
 
+	<-ctx.Done()
 	return application.Stop(ctx)
 }
