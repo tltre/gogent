@@ -84,6 +84,10 @@ func (c *ContextManagerComponent) DeleteSession(sessionId string) {
 	c.manager.DeleteSession(sessionId)
 }
 
+func (c *ContextManagerComponent) ListSessions() []string {
+	return c.manager.ListSessions()
+}
+
 func (c *ContextManagerComponent) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
 	r := c.Registry()
 	if r == nil {

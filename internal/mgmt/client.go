@@ -1,6 +1,7 @@
 package mgmt
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,6 +58,19 @@ func (c *Client) Logs(ctx context.Context) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+func (c *Client) ToolsExec(toolName string, params map[string]any) (map[string]any, error) {
+	body, _ := json.Marshal(map[string]any{"tool": toolName, "params": params})
+	var result map[string]any
+	err := c.post("/api/v1/tools/exec", body, &result)
+	return result, err
+}
+
+func (c *Client) Sessions() ([]string, error) {
+	var list []string
+	err := c.get("/api/v1/sessions", &list)
+	return list, err
+}
+
 func (c *Client) Ping() error {
 	_, err := c.Info()
 	return err
@@ -64,6 +78,20 @@ func (c *Client) Ping() error {
 
 func (c *Client) get(path string, result any) error {
 	resp, err := c.http.Get(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("mgmt request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mgmt request failed: %d", resp.StatusCode)
+	}
+
+	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+func (c *Client) post(path string, body []byte, result any) error {
+	resp, err := c.http.Post(c.baseURL+path, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("mgmt request: %w", err)
 	}

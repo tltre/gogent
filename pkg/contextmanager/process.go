@@ -59,3 +59,9 @@ func (c *ProcessContextManager) Clear(sessionId string) error {
 func (c *ProcessContextManager) DeleteSession(sessionId string) {
 	_ = c.tr.Call(context.Background(), "context/deleteSession", sessionId, nil)
 }
+
+func (c *ProcessContextManager) ListSessions() []string {
+	var result []string
+	_ = c.tr.Call(context.Background(), "context/listSessions", nil, &result)
+	return result
+}

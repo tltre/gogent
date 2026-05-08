@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/contextmanager"
+	"github.com/tltre/gogent/pkg/tool"
 )
 
 // Version is the framework version. Set via ldflags at build time.
@@ -32,6 +35,8 @@ func Listen(addr string, reg *component.Registry) *Server {
 	mux.HandleFunc("/api/v1/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/logs", s.handleLogs)
 	mux.HandleFunc("/api/v1/info", s.handleInfo)
+	mux.HandleFunc("/api/v1/tools/exec", s.handleToolsExec)
+	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
 
 	s.http = &http.Server{
 		Addr:    addr,
@@ -103,7 +108,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content/Type", "application/json")
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -138,4 +143,84 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	<-r.Context().Done()
+}
+
+func (s *Server) handleToolsExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Tool   string         `json:"tool"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	tmComp := s.reg.GetDefault(component.ComponentTool)
+	if tmComp == nil {
+		http.Error(w, "no tool manager registered", http.StatusServiceUnavailable)
+		return
+	}
+	tm, ok := tmComp.(*tool.ToolManager)
+	if !ok {
+		http.Error(w, "default tool component is not a ToolManager", http.StatusInternalServerError)
+		return
+	}
+
+	start := time.Now()
+	result, execErr := tm.Execute(r.Context(), req.Tool, req.Params)
+	elapsed := time.Since(start)
+
+	resp := map[string]any{
+		"tool_name":   req.Tool,
+		"output":      result.Output,
+		"is_error":    result.IsError,
+		"error_msg":   result.ErrorMsg,
+		"duration_ms": elapsed.Milliseconds(),
+	}
+	if execErr != nil {
+		resp["exec_error"] = execErr.Error()
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	cmComp := s.reg.GetDefault(component.ComponentContextManager)
+	if cmComp == nil {
+		// FIXME: return empty list gracefully when no context manager configured
+		json.NewEncoder(w).Encode([]string{})
+		return
+	}
+	cm, ok := cmComp.(*contextmanager.ContextManagerComponent)
+	if !ok {
+		http.Error(w, "default context-manager component type mismatch", http.StatusInternalServerError)
+		return
+	}
+
+	sessions := cm.ListSessions()
+	if sessions == nil {
+		sessions = []string{}
+	}
+
+	if err := json.NewEncoder(w).Encode(sessions); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 }

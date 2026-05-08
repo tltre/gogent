@@ -189,6 +189,8 @@ func contextDispatch(req transport.JSONRPCRequest) (*transport.JSONRPCResponse, 
 		return result(req.ID, nil)
 	case "context/deleteSession":
 		return result(req.ID, nil)
+	case "context/listSessions":
+		return result(req.ID, []string{"sess-daemon"})
 	default:
 		return rpcErr(req.ID)
 	}
@@ -228,7 +230,7 @@ func methodList(componentType string) []string {
 	case "eventbus":
 		return []string{"eventbus/publish", "eventbus/subscribe", "eventbus/unsubscribe"}
 	case "contextmanager":
-		return []string{"context/newSession", "context/addMessage", "context/getMessages", "context/getSummary", "context/buildSystemPrompt", "context/clear", "context/deleteSession"}
+		return []string{"context/newSession", "context/addMessage", "context/getMessages", "context/getSummary", "context/buildSystemPrompt", "context/clear", "context/deleteSession", "context/listSessions"}
 	case "sandbox":
 		return []string{"sandbox/create", "sandbox/destroy", "sandbox/execute", "sandbox/setLimits", "sandbox/getLimits"}
 	default:

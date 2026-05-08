@@ -72,4 +72,11 @@ type IContextManager interface {
 	//  @param sessionID
 	//
 	DeleteSession(sessionID string)
+
+	//
+	// ListSessions
+	//  @Description: list all active session IDs
+	//  @return []string session IDs
+	//
+	ListSessions() []string
 }
