@@ -144,3 +144,5 @@ func (s *DefaultSandbox) GetLimits() ResourceLimits {
 	defer s.mu.RUnlock()
 	return s.limits
 }
+
+func (s *DefaultSandbox) Health(ctx context.Context) error { return nil }

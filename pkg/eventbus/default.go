@@ -73,3 +73,5 @@ func (b *DefaultEventBus) Subscribe(ctx context.Context, topic Topic) (Subscript
 func (b *DefaultEventBus) Unsubscribe(sub Subscription) error {
 	return sub.Close()
 }
+
+func (b *DefaultEventBus) Health(ctx context.Context) error { return nil }

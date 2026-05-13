@@ -83,3 +83,5 @@ func (m *DefaultMemory) Count(ctx context.Context) (int64, error) {
 	defer m.mu.RUnlock()
 	return int64(len(m.items)), nil
 }
+
+func (m *DefaultMemory) Health(ctx context.Context) error { return nil }

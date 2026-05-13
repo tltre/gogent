@@ -124,3 +124,5 @@ func parseLevel(s string) Level {
 		return InfoLevel
 	}
 }
+
+func (l *DefaultLogger) Health(ctx context.Context) error { return nil }

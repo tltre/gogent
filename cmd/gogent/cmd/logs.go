@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/internal/mgmt"
@@ -49,10 +50,13 @@ var logsCmd = &cobra.Command{
 
 		target := mgmt.NewClient(targetPort)
 
-		ctx := context.Background()
-		// FIXME: non-follow logs should use a request-scoped context with timeout
+		var ctx context.Context
 		if follow {
 			ctx = cmd.Context()
+		} else {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 		}
 
 		body, err := target.Logs(ctx)
