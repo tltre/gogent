@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/contextmanager"
 	"github.com/tltre/gogent/pkg/tool"
@@ -21,6 +23,8 @@ var Version = "0.5.0-dev"
 type Server struct {
 	http    *http.Server
 	reg     *component.Registry
+	store   *AppStore
+	daemon  *Daemon
 	started time.Time
 }
 
@@ -31,6 +35,45 @@ func Listen(addr string, reg *component.Registry) *Server {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/registry", s.handleRegistry)
+	mux.HandleFunc("/api/v1/health", s.handleHealth)
+	mux.HandleFunc("/api/v1/logs", s.handleLogs)
+	mux.HandleFunc("/api/v1/info", s.handleInfo)
+	mux.HandleFunc("/api/v1/tools/exec", s.handleToolsExec)
+	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
+	mux.HandleFunc("/api/v1/agent/run", s.handleAgentRun)
+
+	s.http = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func() {
+		fmt.Fprintf(os.Stderr, "[mgmt] listening on %s\n", addr)
+		if err := s.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintf(os.Stderr, "[mgmt] server error: %v\n", err)
+		}
+	}()
+
+	return s
+}
+
+// NewDaemonServer creates a management server for the daemon process. It registers
+// daemon-level /api/v1/apps endpoints in addition to the standard agent-level endpoints.
+func NewDaemonServer(addr string, reg *component.Registry, d *Daemon) *Server {
+	s := &Server{
+		reg:     reg,
+		store:   d.Store(),
+		daemon:  d,
+		started: time.Now(),
+	}
+
+	mux := http.NewServeMux()
+	// Daemon-level endpoints
+	mux.HandleFunc("/api/v1/apps", s.handleApps)
+	mux.HandleFunc("/api/v1/apps/", s.handleAppsPath)
+
+	// Agent-level endpoints
 	mux.HandleFunc("/api/v1/registry", s.handleRegistry)
 	mux.HandleFunc("/api/v1/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/logs", s.handleLogs)
@@ -223,4 +266,208 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var req AgentRunRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	agentComp := s.reg.GetDefault(component.ComponentAgentCore)
+	if agentComp == nil {
+		http.Error(w, "no agent core registered", http.StatusServiceUnavailable)
+		return
+	}
+	agent, ok := agentComp.(*agentcore.AgentRuntime)
+	if !ok {
+		http.Error(w, "default agent component is not an AgentRuntime", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert request messages to agentcore.Input
+	msgs := make([]agentcore.Message, len(req.Messages))
+	for i, m := range req.Messages {
+		msgs[i] = agentcore.Message{Role: m.Role, Content: m.Content}
+	}
+	input := agentcore.Input{
+		Messages: msgs,
+		Context:  req.Context,
+	}
+
+	output, runErr := agent.Run(r.Context(), input)
+
+	resp := AgentRunResponse{
+		Response: AgentMessage{Role: output.Response.Role, Content: output.Response.Content},
+	}
+
+	if output.Actions != nil {
+		actions := make([]AgentAction, len(output.Actions))
+		for i, a := range output.Actions {
+			actions[i] = AgentAction{
+				ToolName: a.ToolName,
+				Params:   a.Params,
+				Result:   a.Result,
+			}
+		}
+		resp.Actions = actions
+	}
+	if output.Metadata != nil {
+		resp.Metadata = output.Metadata
+	}
+	if runErr != nil {
+		resp.Error = runErr.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// --- Daemon-level endpoints (/api/v1/apps) ---
+
+func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleListApps(w, r)
+	case http.MethodPost:
+		s.handleLoadApp(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAppsPath(w http.ResponseWriter, r *http.Request) {
+	subPath := strings.TrimPrefix(r.URL.Path, "/api/v1/apps/")
+	parts := strings.SplitN(subPath, "/", 2)
+	name := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	switch {
+	case action == "" && r.Method == http.MethodGet:
+		s.handleGetApp(w, r, name)
+	case action == "" && r.Method == http.MethodDelete:
+		s.handleStopApp(w, r, name)
+	case action == "restart" && r.Method == http.MethodPost:
+		s.handleRestartApp(w, r, name)
+	default:
+		http.Error(w, "not found", http.StatusNotFound)
+	}
+}
+
+func (s *Server) handleLoadApp(w http.ResponseWriter, r *http.Request) {
+	if s.daemon == nil {
+		http.Error(w, "daemon not configured", http.StatusInternalServerError)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var req LoadAppRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	info, err := s.daemon.LoadApp(req.ConfigPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(info)
+}
+
+func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.daemon != nil {
+		apps := s.daemon.ListApps()
+		if err := json.NewEncoder(w).Encode(apps); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	} else if s.store != nil {
+		apps := s.store.List()
+		if err := json.NewEncoder(w).Encode(apps); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	} else {
+		json.NewEncoder(w).Encode([]AppInfo{})
+	}
+}
+
+func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request, name string) {
+	if s.daemon == nil {
+		http.Error(w, "daemon not configured", http.StatusInternalServerError)
+		return
+	}
+
+	info, exists := s.daemon.GetApp(name)
+	if !exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("app %q not found", name)})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+func (s *Server) handleStopApp(w http.ResponseWriter, r *http.Request, name string) {
+	if s.daemon == nil {
+		http.Error(w, "daemon not configured", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.daemon.StopApp(name); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRestartApp(w http.ResponseWriter, r *http.Request, name string) {
+	if s.daemon == nil {
+		http.Error(w, "daemon not configured", http.StatusInternalServerError)
+		return
+	}
+
+	info, err := s.daemon.RestartApp(name)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(info)
 }
