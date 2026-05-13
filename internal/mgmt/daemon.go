@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,13 +24,68 @@ type Daemon struct {
 }
 
 // NewDaemon creates a new Daemon with an empty AppStore and the given base
-// port for allocation.
-// NOTE: Daemon crash recovery is deferred to v0.7.0.
+// port for allocation. It scans ~/.gogent/ for surviving app instances from
+// a previous daemon crash and recovers them.
 func NewDaemon(basePort int) *Daemon {
-	return &Daemon{
+	d := &Daemon{
 		store:         NewAppStore(),
 		basePort:      basePort,
 		reservedPorts: make(map[int]bool),
+	}
+	d.RecoverApps()
+	return d
+}
+
+// RecoverApps scans ~/.gogent/ for surviving app instances from a previous
+// daemon crash. It checks PID liveness and HTTP health before re-registering
+// each app in the store. Corrupt or dead entries are cleaned up silently.
+func (d *Daemon) RecoverApps() {
+	portFiles, err := ListAppPortFiles()
+	if err != nil {
+		return // directory doesn't exist or can't be read (fresh install)
+	}
+
+	for _, pf := range portFiles {
+		// Skip already registered (shouldn't happen at startup).
+		if _, exists := d.store.Get(pf.Name); exists {
+			continue
+		}
+
+		// Check PID alive — clean up stale entries.
+		if !d.isProcessAlive(pf.PID) {
+			RemoveAppPortFile(pf.Name)
+			continue
+		}
+
+		// Verify HTTP endpoint is responsive.
+		client := NewClient(pf.Port)
+		if err := client.Ping(); err != nil {
+			RemoveAppPortFile(pf.Name)
+			continue
+		}
+
+		// Re-register. ConfigPath and StartedAt are lost after a daemon crash.
+		info := &AppInfo{
+			Name:   pf.Name,
+			Port:   pf.Port,
+			PID:    pf.PID,
+			Status: "running",
+		}
+		if err := d.store.Register(info); err != nil {
+			continue
+		}
+
+		// Reserve the port.
+		portNum, err := strconv.Atoi(strings.TrimPrefix(pf.Port, ":"))
+		if err == nil {
+			d.mu.Lock()
+			d.reservedPorts[portNum] = true
+			d.mu.Unlock()
+		}
+
+		fmt.Fprintf(os.Stderr,
+			"[daemon] recovered app %s (port=%s pid=%d)\n",
+			pf.Name, pf.Port, pf.PID)
 	}
 }
 
@@ -172,8 +228,9 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		return nil, fmt.Errorf("register app: %w", err)
 	}
 
-	// Write port file for the app.
-	WriteAppPortFile(cfg.Name, ":"+portStr)
+	// Note: the agent process writes its own port file (agent.go:62) with the
+	// correct PID. Do NOT write it here with the daemon's PID — it would
+	// break crash recovery (RecoverApps would see the daemon PID as dead).
 
 	return info, nil
 }
