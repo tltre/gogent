@@ -14,11 +14,27 @@ import (
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/contextmanager"
+	"github.com/tltre/gogent/pkg/logger"
 	"github.com/tltre/gogent/pkg/tool"
 )
 
 // Version is the framework version. Set via ldflags at build time.
-var Version = "0.5.0-dev"
+var Version = "0.6.0-dev"
+
+func statusToString(s component.ComponentStatus) string {
+	switch s {
+	case component.StatusUninitialized:
+		return "uninitialized"
+	case component.StatusInitialized:
+		return "initialized"
+	case component.StatusStarted:
+		return "started"
+	case component.StatusStopped:
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
 
 type Server struct {
 	http    *http.Server
@@ -111,11 +127,10 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	var list []ComponentInfo
 	for _, typ := range types {
 		for _, comp := range s.reg.GetByType(typ) {
-			// FIXME: derive real lifecycle status from component (uninitialized/initialized/started/stopped)
 			list = append(list, ComponentInfo{
 				Name:   comp.GetName(),
 				Type:   string(comp.GetType()),
-				Status: "registered",
+				Status: statusToString(s.reg.GetComponentStatus(comp.GetName())),
 			})
 		}
 	}
@@ -129,21 +144,30 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	types := []component.ComponentType{
-		component.ComponentAgentCore, component.ComponentProvider,
-		component.ComponentTool, component.ComponentEventBus,
+		component.ComponentChannel, component.ComponentAgentCore,
+		component.ComponentProvider, component.ComponentTool,
+		component.ComponentHook, component.ComponentEventBus,
 		component.ComponentContextManager, component.ComponentMemory,
-		component.ComponentSandbox,
-		// FIXME: add Channel, Hook, Logger once health-check interfaces are defined
+		component.ComponentSandbox, component.ComponentLogger,
 	}
 
 	var results []HealthResult
 	for _, typ := range types {
 		for _, comp := range s.reg.GetByType(typ) {
-			// FIXME: call component-specific health/ping interface instead of hardcoding "ok"
-			results = append(results, HealthResult{
-				Component: comp.GetName(),
-				Status:    "ok",
-			})
+			start := time.Now()
+			result := HealthResult{Component: comp.GetName()}
+			if hc, ok := comp.(component.HealthChecker); ok {
+				if err := hc.Health(r.Context()); err != nil {
+					result.Status = "unhealthy"
+					result.Error = err.Error()
+				} else {
+					result.Status = "ok"
+				}
+			} else {
+				result.Status = "ok"
+			}
+			result.LatencyMs = time.Since(start).Milliseconds()
+			results = append(results, result)
 		}
 	}
 
@@ -151,13 +175,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content/Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
-	// FIXME: agent name should come from app config, not hardcoded
+	name := "gogent"
+	if s.reg != nil {
+		if ac := s.reg.GetDefault(component.ComponentAgentCore); ac != nil {
+			name = ac.GetName()
+		}
+	}
 	info := InfoResponse{
-		Name:      "gogent",
+		Name:      name,
 		Version:   Version,
 		GoVersion: runtime.Version(),
 		UptimeSec: int64(time.Since(s.started).Seconds()),
@@ -171,7 +200,6 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
-	// FIXME: wire up to actual logger component for real-time log streaming
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -182,10 +210,59 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, "data: {\"message\":\"log stream started\"}\n\n")
+	// Verify logger component is wired. Real-time log streaming requires a
+	// subscription API on the Logger interface, which is not yet available.
+	// Once the Logger interface gains a Subscribe() or channel-based API, this
+	// handler will stream log entries directly.
+	if lc := s.reg.GetDefault(component.ComponentLogger); lc != nil {
+		if _, ok := lc.(*logger.LoggerComponent); !ok {
+			fmt.Fprintf(os.Stderr, "[mgmt] logs: default logger is not a LoggerComponent\n")
+		}
+	}
+
+	writeSSE(w, ssePayload{
+		Message:   "log stream connected",
+		Level:     "info",
+		Module:    "mgmt",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	})
 	flusher.Flush()
 
-	<-r.Context().Done()
+	// Periodic keepalive to prevent proxy/load-balancer timeouts.
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			writeSSE(w, ssePayload{
+				Message:   "heartbeat",
+				Level:     "debug",
+				Module:    "mgmt",
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			})
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// ssePayload is the JSON payload sent as an SSE event for handleLogs.
+type ssePayload struct {
+	Message   string `json:"message"`
+	Level     string `json:"level"`
+	Module    string `json:"module,omitempty"`
+	Timestamp string `json:"timestamp"`
+}
+
+// writeSSE marshals v as JSON and writes it as an SSE data frame.
+func writeSSE(w io.Writer, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 func (s *Server) handleToolsExec(w http.ResponseWriter, r *http.Request) {

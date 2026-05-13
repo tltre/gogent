@@ -18,8 +18,8 @@ import (
 // the runtime port file written by a running agent.
 func resolveMgmtPort(cmd *cobra.Command) string {
 	if !cmd.Flags().Changed("port") {
-		if p, err := mgmt.PortFromFile(); err == nil {
-			return p
+		if pf, err := mgmt.ReadDaemonPortFile(); err == nil {
+			return pf.Port
 		}
 	}
 	return port

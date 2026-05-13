@@ -13,8 +13,6 @@ type PortFile struct {
 	Name string `json:"name"`
 }
 
-const portFileName = ".gogent.pid"
-
 // gogentDir returns the path to ~/.gogent/, creating the directory if it
 // does not exist (0700, private to user). Returns empty string on failure.
 func gogentDir() string {
@@ -166,77 +164,4 @@ func RemoveAppPortFile(name string) {
 	os.Remove(filepath.Join(dir, name+".port"))
 }
 
-// ---------------------------------------------------------------------------
-// Legacy backward-compatible functions (CWD .gogent.pid)
-// ---------------------------------------------------------------------------
 
-// WritePortFile writes the port file. For backward compatibility it writes
-// both the new-style app port file in ~/.gogent/ and the legacy CWD
-// .gogent.pid.
-func WritePortFile(port, name string) error {
-	// New-style app port file in ~/.gogent/ (best-effort)
-	WriteAppPortFile(name, port)
-
-	// Legacy: CWD .gogent.pid
-	f, err := os.Create(portFileName)
-	if err != nil {
-		return fmt.Errorf("write port file: %w", err)
-	}
-	defer f.Close()
-
-	pf := PortFile{
-		PID:  os.Getpid(),
-		Port: port,
-		Name: name,
-	}
-	return json.NewEncoder(f).Encode(&pf)
-}
-
-// ReadPortFile reads the port file. It first tries the daemon port file in
-// ~/.gogent/, falling back to the legacy CWD .gogent.pid.
-func ReadPortFile() (*PortFile, error) {
-	// Try daemon port file first (new-style)
-	if pf, err := ReadDaemonPortFile(); err == nil {
-		return pf, nil
-	}
-
-	// Fall back to legacy CWD
-	data, err := os.ReadFile(portFileName)
-	if err != nil {
-		return nil, fmt.Errorf("no agent running (no %s found)", portFileName)
-	}
-
-	var pf PortFile
-	if err := json.Unmarshal(data, &pf); err != nil {
-		return nil, fmt.Errorf("corrupt port file: %w", err)
-	}
-	return &pf, nil
-}
-
-// PortFromFile returns the port string from the port file.
-func PortFromFile() (string, error) {
-	pf, err := ReadPortFile()
-	if err != nil {
-		return "", err
-	}
-	return pf.Port, nil
-}
-
-// RemovePortFile removes the port file. It removes both the legacy CWD
-// .gogent.pid and — if the legacy file contains a valid name — the
-// corresponding new-style app port file from ~/.gogent/.
-func RemovePortFile() {
-	// Attempt to determine app name from legacy file for cleanup
-	name := "agent"
-	legacyData, err := os.ReadFile(portFileName)
-	if err == nil {
-		var legacyPf PortFile
-		if err := json.Unmarshal(legacyData, &legacyPf); err == nil && legacyPf.Name != "" {
-			name = legacyPf.Name
-		}
-	}
-	RemoveAppPortFile(name)
-
-	// Always remove legacy CWD file
-	os.Remove(portFileName)
-}

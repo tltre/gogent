@@ -72,10 +72,10 @@ func serveAgentDirect(configPath string, mgmtPort string) error {
 	srv := mgmt.Listen(mgmtPort, application.Registry())
 	defer srv.Shutdown(context.Background())
 
-	if err := mgmt.WritePortFile(mgmtPort, application.Name()); err != nil {
+	if err := mgmt.WriteAppPortFile(application.Name(), mgmtPort); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not write port file: %v\n", err)
 	}
-	defer mgmt.RemovePortFile()
+	defer mgmt.RemoveAppPortFile(application.Name())
 
 	fmt.Fprintf(os.Stderr, "agent serving on %s  pid=%d\n", mgmtPort, os.Getpid())
 
