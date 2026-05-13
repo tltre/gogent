@@ -12,6 +12,7 @@ type Registry struct {
 	byType      map[ComponentType][]Component
 	defaults    map[ComponentType]string
 	initialized bool
+	statuses    map[string]ComponentStatus
 }
 
 func NewRegistry() *Registry {
@@ -19,6 +20,7 @@ func NewRegistry() *Registry {
 		components: make(map[string]Component),
 		byType:     make(map[ComponentType][]Component),
 		defaults:   make(map[ComponentType]string),
+		statuses:   make(map[string]ComponentStatus),
 	}
 }
 
@@ -105,6 +107,21 @@ func (r *Registry) SetDefault(typ ComponentType, name string) error {
 	return nil
 }
 
+func (r *Registry) SetComponentStatus(name string, status ComponentStatus) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.statuses[name] = status
+}
+
+func (r *Registry) GetComponentStatus(name string) ComponentStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if s, ok := r.statuses[name]; ok {
+		return s
+	}
+	return StatusUninitialized
+}
+
 func (r *Registry) InitializeAll(ctx context.Context) error {
 	r.mu.RLock()
 	order, err := r.topologicalSort()
@@ -122,6 +139,7 @@ func (r *Registry) InitializeAll(ctx context.Context) error {
 		if err := c.Initialize(ctx, r); err != nil {
 			return fmt.Errorf("initialize component %s: %w", c.GetName(), err)
 		}
+		r.SetComponentStatus(c.GetName(), StatusInitialized)
 	}
 
 	r.mu.Lock()
@@ -147,6 +165,7 @@ func (r *Registry) StartAll(ctx context.Context) error {
 		if err := c.Start(ctx); err != nil {
 			return fmt.Errorf("start component %s: %w", c.GetName(), err)
 		}
+		r.SetComponentStatus(c.GetName(), StatusStarted)
 	}
 	return nil
 }
@@ -168,6 +187,7 @@ func (r *Registry) StopAll(ctx context.Context) error {
 		if err := comps[i].Stop(ctx); err != nil {
 			return fmt.Errorf("stop component %s: %w", comps[i].GetName(), err)
 		}
+		r.SetComponentStatus(comps[i].GetName(), StatusStopped)
 	}
 	return nil
 }

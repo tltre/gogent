@@ -39,6 +39,21 @@ type Dependencies interface {
 	GetDefault(typ ComponentType) Component
 }
 
+// HealthChecker is an optional interface components can implement to
+// provide live health-check information.
+type HealthChecker interface {
+	Health(ctx context.Context) error
+}
+
+type ComponentStatus int
+
+const (
+	StatusUninitialized ComponentStatus = iota
+	StatusInitialized
+	StatusStarted
+	StatusStopped
+)
+
 type BasicComponent struct {
 	name string
 	reg  *Registry
