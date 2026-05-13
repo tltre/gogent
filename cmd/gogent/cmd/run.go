@@ -1,18 +1,17 @@
 package cmd
 
 import (
-	"context"
+	"bufio"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/internal/mgmt"
-	"github.com/tltre/gogent/pkg/app"
 )
 
 var tuiMode bool
+var keepAlive bool
 
 var runCmd = &cobra.Command{
 	Use:   "run <config.yaml>",
@@ -29,58 +28,77 @@ var runCmd = &cobra.Command{
 
 func init() {
 	runCmd.Flags().BoolVarP(&tuiMode, "tui", "i", false, "start in TUI mode (placeholder)")
+	runCmd.Flags().BoolVar(&keepAlive, "keep-alive", false, "keep app running after REPL exits")
 }
 
-// FIXME: runAgent and serveAgent share ~80% duplicate initialization logic.
-// Extract shared build+start agent helper once the interface stabilizes.
 func runAgent(configPath string, mgmtPort string) error {
-	builder, err := app.NewBuilder(configPath)
+	// 1. Ensure daemon is running and get a client.
+	daemonClient, err := ensureDaemon(mgmtPort)
 	if err != nil {
-		return fmt.Errorf("create builder: %w", err)
+		return fmt.Errorf("daemon: %w", err)
 	}
 
-	application, err := builder.Build()
+	// 2. Load the app through the daemon.
+	info, err := daemonClient.LoadApp(configPath)
 	if err != nil {
-		return fmt.Errorf("build application: %w", err)
+		return fmt.Errorf("load app via daemon: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	fmt.Fprintf(os.Stderr, "app %s loaded | port=%s pid=%d\n", info.Name, info.Port, info.PID)
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// 3. Connect to the app's management endpoint for REPL.
+	appClient := mgmt.NewClient(info.Port)
 
-	go func() {
-		<-sigChan
-		fmt.Fprintln(os.Stderr, "\nShutting down...")
-		cancel()
-	}()
+	// 4. Run interactive REPL.
+	runErr := runREPL(appClient, info.Name, daemonClient)
 
-	if err := application.Initialize(ctx); err != nil {
-		return fmt.Errorf("initialize: %w", err)
-	}
+	return runErr
+}
 
-	if err := application.Start(ctx); err != nil {
-		return fmt.Errorf("start: %w", err)
-	}
+// runREPL runs an interactive read-eval-print loop using the app's
+// management API. On exit it stops the app unless --keep-alive is set.
+func runREPL(client *mgmt.Client, appName string, daemonClient *mgmt.Client) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Fprint(os.Stdout, "> ")
 
-	srv := mgmt.Listen(mgmtPort, application.Registry())
-	defer srv.Shutdown(context.Background())
-
-	if err := mgmt.WritePortFile(mgmtPort, "agent"); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: could not write port file: %v\n", err)
-	}
-	// FIXME: agent name should come from config, not hardcoded "agent"
-	defer mgmt.RemovePortFile()
-
-	if iface := application.Interface(); iface != nil {
-		err := iface.Run(ctx, application.Registry())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Application error: %v\n", err)
+	for scanner.Scan() {
+		input := strings.TrimSpace(scanner.Text())
+		if input == "" {
+			fmt.Fprint(os.Stdout, "> ")
+			continue
 		}
-	} else {
-		<-ctx.Done()
+		if input == "quit" || input == "exit" {
+			break
+		}
+
+		resp, err := client.AgentRun([]mgmt.AgentMessage{
+			{Role: "user", Content: input},
+		}, nil)
+
+		if err != nil {
+			fmt.Fprintf(os.Stdout, "Error: %v\n> ", err)
+			continue
+		}
+
+		if resp.Error != "" {
+			fmt.Fprintf(os.Stdout, "Error: %s\n> ", resp.Error)
+		} else {
+			fmt.Fprintf(os.Stdout, "%s\n", resp.Response.Content)
+		}
+		fmt.Fprint(os.Stdout, "> ")
 	}
 
-	return application.Stop(ctx)
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+
+	// Stop the app unless --keep-alive is set.
+	if !keepAlive {
+		if err := daemonClient.StopApp(appName); err != nil {
+			return fmt.Errorf("stop app: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "app stopped")
+	}
+
+	return nil
 }
