@@ -117,6 +117,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
+	if s.reg == nil {
+		http.Error(w, "not available in daemon mode", http.StatusServiceUnavailable)
+		return
+	}
 	types := []component.ComponentType{
 		component.ComponentChannel, component.ComponentAgentCore,
 		component.ComponentProvider, component.ComponentTool,
@@ -143,6 +147,12 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	var results []HealthResult
+	if s.reg == nil {
+		json.NewEncoder(w).Encode(results)
+		w.Header().Set("Content-Type", "application/json")
+		return
+	}
 	types := []component.ComponentType{
 		component.ComponentChannel, component.ComponentAgentCore,
 		component.ComponentProvider, component.ComponentTool,
@@ -151,7 +161,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		component.ComponentSandbox, component.ComponentLogger,
 	}
 
-	var results []HealthResult
+	results = make([]HealthResult, 0)
 	for _, typ := range types {
 		for _, comp := range s.reg.GetByType(typ) {
 			start := time.Now()
@@ -214,9 +224,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// subscription API on the Logger interface, which is not yet available.
 	// Once the Logger interface gains a Subscribe() or channel-based API, this
 	// handler will stream log entries directly.
-	if lc := s.reg.GetDefault(component.ComponentLogger); lc != nil {
-		if _, ok := lc.(*logger.LoggerComponent); !ok {
-			fmt.Fprintf(os.Stderr, "[mgmt] logs: default logger is not a LoggerComponent\n")
+	if s.reg != nil {
+		if lc := s.reg.GetDefault(component.ComponentLogger); lc != nil {
+			if _, ok := lc.(*logger.LoggerComponent); !ok {
+				fmt.Fprintf(os.Stderr, "[mgmt] logs: default logger is not a LoggerComponent\n")
+			}
 		}
 	}
 
@@ -287,6 +299,10 @@ func (s *Server) handleToolsExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.reg == nil {
+		http.Error(w, "not available in daemon mode", http.StatusServiceUnavailable)
+		return
+	}
 	tmComp := s.reg.GetDefault(component.ComponentTool)
 	if tmComp == nil {
 		http.Error(w, "no tool manager registered", http.StatusServiceUnavailable)
@@ -321,6 +337,10 @@ func (s *Server) handleToolsExec(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if s.reg == nil {
+		http.Error(w, "not available in daemon mode", http.StatusServiceUnavailable)
+		return
+	}
 	cmComp := s.reg.GetDefault(component.ComponentContextManager)
 	if cmComp == nil {
 		// FIXME: return empty list gracefully when no context manager configured
@@ -348,6 +368,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.reg == nil {
+		http.Error(w, "not available in daemon mode", http.StatusServiceUnavailable)
 		return
 	}
 
