@@ -38,4 +38,7 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(inspectCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(listCmd)
 }
