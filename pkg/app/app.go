@@ -14,6 +14,13 @@ type App struct {
 	iface    iface.Interface
 }
 
+func (a *App) Name() string {
+	if a.config == nil {
+		return ""
+	}
+	return a.config.Name
+}
+
 func (a *App) Registry() *component.Registry {
 	return a.registry
 }

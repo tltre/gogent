@@ -8,6 +8,9 @@
 # opencode
 .opencode/
 
+# Sisyphus plans and state
+.sisyphus/
+
 # OS
 .DS_Store
 Thumbs.db
