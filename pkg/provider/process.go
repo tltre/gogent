@@ -2,31 +2,65 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/tltre/gogent/internal/client"
+	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/tltre/gogent/internal/grpctransport"
+	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
 )
 
+// ProcessProviderConfig holds the configuration for a gRPC-based ProcessProvider.
 type ProcessProviderConfig struct {
-	Name      string
-	Transport client.Transport
+	Name   string
+	Pool   *grpctransport.Pool
+	Target string
 }
 
+// ProcessProvider is a provider implementation that communicates with a remote
+// provider service over gRPC.
 type ProcessProvider struct {
-	tr *client.LazyTransport
+	cfg    *ProcessProviderConfig
+	client gogentv1.ProviderServiceClient
 }
 
+// NewProcessProvider creates a new ProcessProvider. The gRPC client is lazily
+// initialized on the first method call.
 func NewProcessProvider(cfg *ProcessProviderConfig) *ProcessProvider {
-	return &ProcessProvider{tr: client.WrapLazy(cfg.Transport)}
+	return &ProcessProvider{cfg: cfg}
 }
 
+// getClient lazily initializes and returns the gRPC ProviderServiceClient.
+func (p *ProcessProvider) getClient() (gogentv1.ProviderServiceClient, error) {
+	if p.client != nil {
+		return p.client, nil
+	}
+	conn, err := p.cfg.Pool.Get(p.cfg.Target)
+	if err != nil {
+		return nil, fmt.Errorf("provider: get connection: %w", err)
+	}
+	p.client = gogentv1.NewProviderServiceClient(conn.ClientConn())
+	return p.client, nil
+}
+
+// Generate sends a generation request to the remote provider via gRPC.
 func (p *ProcessProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
-	var result Response
-	if err := p.tr.Call(ctx, "provider/generate", messages, &result); err != nil {
+	client, err := p.getClient()
+	if err != nil {
 		return Response{}, err
 	}
-	return result, nil
+	req := &gogentv1.GenerateRequest{
+		Messages: messagesToProto(messages),
+	}
+	resp, err := client.Generate(ctx, req)
+	if err != nil {
+		return Response{}, err
+	}
+	return generateResponseFromProto(resp), nil
 }
 
+// Stream emulates streaming by delegating to Generate. The gRPC proto does not
+// yet define a server-streaming RPC, so this falls back to single-shot generation.
 func (p *ProcessProvider) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
 	ch := make(chan StreamChunk, 100)
 	go func() {
@@ -38,8 +72,93 @@ func (p *ProcessProvider) Stream(ctx context.Context, messages []ProviderMessage
 	return ch, nil
 }
 
+// ModelInfo retrieves model metadata from the remote provider via gRPC.
 func (p *ProcessProvider) ModelInfo() ModelInfo {
-	var result ModelInfo
-	_ = p.tr.Call(context.Background(), "provider/modelInfo", nil, &result)
+	client, err := p.getClient()
+	if err != nil {
+		return ModelInfo{}
+	}
+	resp, err := client.ModelInfo(context.Background(), &gogentv1.ModelInfoRequest{})
+	if err != nil {
+		return ModelInfo{}
+	}
+	if resp.ModelInfo == nil {
+		return ModelInfo{}
+	}
+	return modelInfoFromProto(resp.ModelInfo)
+}
+
+// --- conversion helpers: Go domain types → gRPC proto types ---
+
+func messagesToProto(msgs []ProviderMessage) []*gogentv1.ProviderMessage {
+	result := make([]*gogentv1.ProviderMessage, len(msgs))
+	for i, m := range msgs {
+		result[i] = &gogentv1.ProviderMessage{
+			Role:    m.Role,
+			Content: m.Content,
+			Tools:   toolDefsToProto(m.Tools),
+		}
+	}
 	return result
+}
+
+func toolDefsToProto(tools []ToolDefinition) []*gogentv1.ToolDefinition {
+	if len(tools) == 0 {
+		return nil
+	}
+	result := make([]*gogentv1.ToolDefinition, len(tools))
+	for i, t := range tools {
+		params, _ := structpb.NewValue(t.Parameters)
+		result[i] = &gogentv1.ToolDefinition{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  params,
+		}
+	}
+	return result
+}
+
+// --- conversion helpers: gRPC proto types → Go domain types ---
+
+func generateResponseFromProto(resp *gogentv1.GenerateResponse) Response {
+	r := Response{
+		Content:      resp.Content,
+		FinishReason: resp.FinishReason,
+	}
+	for _, tc := range resp.ToolCalls {
+		r.ToolCalls = append(r.ToolCalls, toolCallFromProto(tc))
+	}
+	if resp.Usage != nil {
+		r.Usage = usageFromProto(resp.Usage)
+	}
+	return r
+}
+
+func toolCallFromProto(tc *gogentv1.ToolCall) ToolCall {
+	c := ToolCall{
+		ID:   tc.Id,
+		Name: tc.Name,
+	}
+	if tc.Args != nil {
+		c.Args = tc.Args.AsMap()
+	}
+	return c
+}
+
+func usageFromProto(u *gogentv1.Usage) Usage {
+	return Usage{
+		PromptTokens:     int(u.PromptTokens),
+		CompletionTokens: int(u.CompletionTokens),
+		TotalTokens:      int(u.TotalTokens),
+	}
+}
+
+func modelInfoFromProto(info *gogentv1.ModelInfo) ModelInfo {
+	return ModelInfo{
+		Name:           info.Name,
+		Provider:       info.Provider,
+		ContextSize:    int(info.ContextSize),
+		SupportsTool:   info.SupportsTool,
+		SupportsVision: info.SupportsVision,
+	}
 }
