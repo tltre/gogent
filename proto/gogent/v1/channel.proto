@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+
+// ChannelService provides message send/receive over communication channels.
+// Maps to channel.IChannel in pkg/channel/channel.go.
+service ChannelService {
+    // Send pushes a message through the channel.
+    rpc Send(SendRequest) returns (SendResponse);
+
+    // Receive opens a server-stream that delivers incoming messages.
+    rpc Receive(ReceiveRequest) returns (stream ChannelMessage);
+}
+
+enum MessageType {
+    MESSAGE_TYPE_UNSPECIFIED = 0;
+    MESSAGE_TYPE_TEXT        = 1;
+    MESSAGE_TYPE_IMAGE       = 2;
+    MESSAGE_TYPE_AUDIO       = 3;
+    MESSAGE_TYPE_VIDEO       = 4;
+    MESSAGE_TYPE_FILE        = 5;
+    MESSAGE_TYPE_SYSTEM      = 6;
+}
+
+// ChannelMessage is a message transported over the channel.
+// Named ChannelMessage to avoid collision with agentcore.Message in the shared gogent.v1 package.
+message ChannelMessage {
+    string                    id         = 1;
+    string                    session_id = 2;
+    MessageType               type       = 3;
+    string                    content    = 4;
+    google.protobuf.Struct    extra      = 5;  // map<string, any> in Go
+}
+
+message SendRequest {
+    string                    id         = 1;
+    string                    session_id = 2;
+    MessageType               type       = 3;
+    string                    content    = 4;
+    google.protobuf.Struct    extra      = 5;
+}
+
+message SendResponse {
+    // intentionally empty — caller checks gRPC status for errors
+}
+
+message ReceiveRequest {
+    // Optional session filter. When set, only messages for this session
+    // are streamed. When empty, all messages are delivered.
+    string session_id = 1;
+}

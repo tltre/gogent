@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+
+// EventBusService provides publish-subscribe event distribution.
+service EventBusService {
+  // Publish sends an event on a topic.
+  rpc Publish(PublishRequest) returns (PublishResponse);
+
+  // Subscribe returns a server-side stream of events for the given topic.
+  rpc Subscribe(SubscribeRequest) returns (stream Event);
+
+  // Unsubscribe cancels an active subscription.
+  rpc Unsubscribe(UnsubscribeRequest) returns (UnsubscribeResponse);
+}
+
+// Event represents a single event published to the bus.
+message Event {
+  // The topic this event belongs to.
+  string topic = 1;
+
+  // A key for routing or deduplication within the topic.
+  string key = 2;
+
+  // The event payload. Type is opaque to the bus; consumers interpret it.
+  google.protobuf.Value payload = 3;
+}
+
+message PublishRequest {
+  string topic = 1;
+  Event event = 2;
+}
+
+message PublishResponse {}
+
+message SubscribeRequest {
+  string topic = 1;
+}
+
+message UnsubscribeRequest {
+  // Opaque identifier returned by the server when the stream was established.
+  string subscription_id = 1;
+}
+
+message UnsubscribeResponse {}

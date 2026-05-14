@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+// SandboxService provides isolated execution environments.
+// Maps to sandbox.ISandbox in pkg/sandbox/sandbox.go.
+service SandboxService {
+    // Create allocates a new sandbox instance.
+    rpc Create(CreateRequest) returns (CreateResponse);
+
+    // Execute runs code inside an existing sandbox.
+    rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+    // Destroy tears down a sandbox instance.
+    rpc Destroy(DestroyRequest) returns (DestroyResponse);
+}
+
+// ResourceLimits constrains sandbox resource usage.
+message ResourceLimits {
+    int32  max_memory_mb      = 1;
+    int64  max_cpu_time_ns    = 2;  // nanoseconds
+    int64  max_file_size      = 3;
+    bool   network_access     = 4;
+    repeated string allowed_syscalls = 5;
+    int32  max_processes      = 6;
+    repeated string allowed_commands = 7;
+    bool   read_only_root     = 8;
+}
+
+message CreateRequest {
+    // Optional resource limits to apply on creation.
+    ResourceLimits limits = 1;
+}
+
+message CreateResponse {
+    string sandbox_id = 1;
+}
+
+message DestroyRequest {
+    string sandbox_id = 1;
+}
+
+message DestroyResponse {
+    // intentionally empty — caller checks gRPC status for errors
+}
+
+message ExecuteRequest {
+    string sandbox_id        = 1;
+    string code              = 2;
+    string language          = 3;
+    int64  timeout_ms        = 4;  // milliseconds
+    map<string, bytes> files = 5;
+    map<string, string> env  = 6;
+}
+
+message ExecuteResponse {
+    string stdout        = 1;
+    string stderr        = 2;
+    int32  exit_code     = 3;
+    string error         = 4;
+    int64  duration_ms   = 5;
+}

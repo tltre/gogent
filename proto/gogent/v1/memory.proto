@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// MemoryItem represents a single entry in the memory store.
+message MemoryItem {
+  string id = 1;
+  string content = 2;
+  google.protobuf.Struct extra = 3;
+  repeated double embedding = 4;
+  google.protobuf.Timestamp created_at = 5;
+  double score = 6;
+}
+
+// MemoryQuery defines search parameters for memory retrieval.
+message MemoryQuery {
+  string text = 1;
+  int32 top_k = 2;
+  google.protobuf.Struct filter = 3;
+  double min_score = 4;
+}
+
+// QueryRequest is the input to MemoryService.Query.
+message QueryRequest {
+  MemoryQuery query = 1;
+}
+
+// QueryResponse is the output from MemoryService.Query.
+message QueryResponse {
+  repeated MemoryItem items = 1;
+}
+
+// AddEntryRequest is the input to MemoryService.Add.
+message AddEntryRequest {
+  MemoryItem item = 1;
+}
+
+// AddEntryResponse is the output from MemoryService.Add.
+message AddEntryResponse {
+  string id = 1;
+}
+
+// MemoryClearRequest is the input to MemoryService.Clear.
+message MemoryClearRequest {}
+
+// MemoryClearResponse is the output from MemoryService.Clear.
+message MemoryClearResponse {}
+
+// MemoryService exposes long-term memory operations.
+service MemoryService {
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Add(AddEntryRequest) returns (AddEntryResponse);
+  rpc Clear(MemoryClearRequest) returns (MemoryClearResponse);
+}

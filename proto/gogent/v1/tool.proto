@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+
+// ToolInfo describes a registered tool exposed to agents.
+message ToolInfo {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Value parameters = 3;
+}
+
+// ToolResult is the outcome of a tool execution.
+message ToolResult {
+  google.protobuf.Value output = 1;
+  bool is_error = 2;
+  string error_msg = 3;
+}
+
+// ListToolsRequest is the input to ToolService.ListTools.
+message ListToolsRequest {}
+
+// ListToolsResponse is the output from ToolService.ListTools.
+message ListToolsResponse {
+  repeated ToolInfo tools = 1;
+}
+
+// ExecuteToolRequest is the input to ToolService.ExecuteTool.
+message ExecuteToolRequest {
+  string name = 1;
+  google.protobuf.Struct params = 2;
+}
+
+// ExecuteToolResponse is the output from ToolService.ExecuteTool.
+message ExecuteToolResponse {
+  ToolResult result = 1;
+}
+
+// ToolService exposes tool discovery and execution operations.
+service ToolService {
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+}

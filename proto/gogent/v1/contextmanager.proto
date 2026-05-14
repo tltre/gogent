@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// ContextManagerService manages conversational context and sessions.
+service ContextManagerService {
+  // NewSession creates a new conversation session.
+  rpc NewSession(NewSessionRequest) returns (NewSessionResponse);
+
+  // AddMessage appends a message to the session history.
+  rpc AddMessage(AddMessageRequest) returns (AddMessageResponse);
+
+  // GetMessages retrieves the full message history for a session.
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+
+  // GetSummary returns the current conversation summary.
+  rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse);
+
+  // BuildSystemPrompt constructs a system prompt from history and summary.
+  rpc BuildSystemPrompt(BuildSystemPromptRequest) returns (BuildSystemPromptResponse);
+
+  // Clear removes all messages from a session while keeping the session alive.
+  rpc Clear(ContextClearRequest) returns (ContextClearResponse);
+
+  // DeleteSession permanently removes a session.
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+
+  // ListSessions returns all active session IDs.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+}
+
+// ContextMessage represents a single message in a conversation.
+message ContextMessage {
+  string role = 1;
+  string content = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  google.protobuf.Struct extra = 4;
+}
+
+// Summary holds a condensed version of the conversation.
+message Summary {
+  string content = 1;
+  repeated string key_points = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+message NewSessionRequest {}
+
+message NewSessionResponse {
+  string session_id = 1;
+}
+
+message AddMessageRequest {
+  string session_id = 1;
+  ContextMessage message = 2;
+}
+
+message AddMessageResponse {}
+
+message GetMessagesRequest {
+  string session_id = 1;
+}
+
+message GetMessagesResponse {
+  repeated ContextMessage messages = 1;
+}
+
+message GetSummaryRequest {
+  string session_id = 1;
+}
+
+message GetSummaryResponse {
+  Summary summary = 1;
+}
+
+message BuildSystemPromptRequest {
+  string session_id = 1;
+}
+
+message BuildSystemPromptResponse {
+  string system_prompt = 1;
+}
+
+message ContextClearRequest {
+  string session_id = 1;
+}
+
+message ContextClearResponse {}
+
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+
+message DeleteSessionResponse {}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated string session_ids = 1;
+}

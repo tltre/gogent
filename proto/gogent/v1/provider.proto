@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+
+// ProviderMessage represents a single message in a conversation.
+message ProviderMessage {
+  string role = 1;
+  string content = 2;
+  repeated ToolDefinition tools = 3;
+}
+
+// ToolDefinition describes a tool available to the provider.
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Value parameters = 3;
+}
+
+// ToolCall represents a request from the provider to invoke a tool.
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Struct args = 3;
+}
+
+// Usage tracks token consumption for a generation.
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+}
+
+// GenerateRequest is the input to ProviderService.Generate.
+message GenerateRequest {
+  repeated ProviderMessage messages = 1;
+}
+
+// GenerateResponse is the output from ProviderService.Generate.
+message GenerateResponse {
+  string content = 1;
+  repeated ToolCall tool_calls = 2;
+  string finish_reason = 3;
+  Usage usage = 4;
+}
+
+// ModelInfo provides metadata about the underlying model.
+message ModelInfo {
+  string name = 1;
+  string provider = 2;
+  int32 context_size = 3;
+  bool supports_tool = 4;
+  bool supports_vision = 5;
+}
+
+// ModelInfoRequest is the input to ProviderService.ModelInfo.
+message ModelInfoRequest {}
+
+// ModelInfoResponse is the output from ProviderService.ModelInfo.
+message ModelInfoResponse {
+  ModelInfo model_info = 1;
+}
+
+// ProviderService exposes LLM provider operations.
+service ProviderService {
+  rpc Generate(GenerateRequest) returns (GenerateResponse);
+  rpc ModelInfo(ModelInfoRequest) returns (ModelInfoResponse);
+}

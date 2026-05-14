@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+import "google/protobuf/struct.proto";
+
+// HookService provides lifecycle hook interception.
+// Maps to hook.IHook in pkg/hook/hook.go.
+service HookService {
+    // OnEvent is called when a hookable lifecycle event occurs.
+    // The response may carry modified context key-value pairs.
+    rpc OnEvent(HookEventRequest) returns (HookEventResponse);
+}
+
+enum HookEventType {
+    HOOK_EVENT_TYPE_UNSPECIFIED = 0;
+    HOOK_EVENT_TYPE_BEFORE_RUN  = 1;
+    HOOK_EVENT_TYPE_AFTER_RUN   = 2;
+    HOOK_EVENT_TYPE_BEFORE_TOOL = 3;
+    HOOK_EVENT_TYPE_AFTER_TOOL  = 4;
+    HOOK_EVENT_TYPE_BEFORE_LLM  = 5;
+    HOOK_EVENT_TYPE_AFTER_LLM   = 6;
+    HOOK_EVENT_TYPE_ERROR       = 7;
+    HOOK_EVENT_TYPE_STREAMING   = 8;
+}
+
+message HookEventRequest {
+    HookEventType             type    = 1;
+    string                    name    = 2;
+    google.protobuf.Struct    payload = 3;  // hook.Event.Payload (any in Go)
+    string                    error   = 4;  // hook.Event.Error serialized as string
+}
+
+message HookEventResponse {
+    // Context key-value pairs that the caller should merge into the
+    // downstream context. Maps to the returned context.Context in Go.
+    map<string, string> context_values = 1;
+
+    // Non-nil error aborts the calling chain (maps to returned error).
+    string error = 2;
+}
