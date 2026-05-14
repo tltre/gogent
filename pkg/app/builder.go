@@ -1,15 +1,12 @@
 package app
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"time"
+	"strings"
 
-	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/tltre/gogent/internal/client"
+	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/channel"
 	"github.com/tltre/gogent/pkg/component"
@@ -25,18 +22,12 @@ import (
 	"github.com/tltre/gogent/pkg/tool"
 )
 
-type DriverType string
-
-const (
-	DriverHTTP    DriverType = "http"
-	DriverProcess DriverType = "process"
-)
-
 type Builder struct {
 	config     *Config
 	registry   *component.Registry
 	iface      iface.Interface
 	cliEntries []cli.CommandEntry
+	pool       *grpctransport.Pool
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -53,6 +44,7 @@ func NewBuilder(configPath string) (*Builder, error) {
 	return &Builder{
 		config:   cfg,
 		registry: component.NewRegistry(),
+		pool:     grpctransport.NewPool(),
 	}, nil
 }
 
@@ -60,6 +52,7 @@ func NewBuilderFromConfig(cfg *Config) *Builder {
 	return &Builder{
 		config:   cfg,
 		registry: component.NewRegistry(),
+		pool:     grpctransport.NewPool(),
 	}
 }
 
@@ -138,19 +131,12 @@ func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error
 }
 
 func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentChannel))
+	switch cc.Driver {
+	case "http", "process":
 		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return channel.NewComponent(cc.Name, ch), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentChannel))
-		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return channel.NewComponent(cc.Name, ch), nil
 	default:
@@ -159,19 +145,12 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 }
 
 func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentAgentCore))
+	switch cc.Driver {
+	case "http", "process":
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return agentcore.NewComponent(cc.Name, core), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentAgentCore))
-		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return agentcore.NewComponent(cc.Name, core), nil
 	default:
@@ -180,19 +159,12 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 }
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentProvider))
+	switch cc.Driver {
+	case "http", "process":
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return provider.NewComponent(cc.Name, p), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentProvider))
-		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return provider.NewComponent(cc.Name, p), nil
 	default:
@@ -210,23 +182,14 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 					name := getString(toolMap, "name")
 					desc := getString(toolMap, "description")
 					driver := getString(toolMap, "driver")
-					switch DriverType(driver) {
-					case DriverHTTP:
-						tr := b.newHTTPTransport(toolMap, "tool")
+					switch driver {
+					case "http", "process":
 						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
 							Description: desc,
 							ToolName:    getString(toolMap, "toolName"),
-							Transport:   tr,
-						})
-						comp.Register(toolImpl)
-					case DriverProcess:
-						tr := b.newStdioTransport(toolMap, "tool")
-						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
-							Name:        name,
-							Description: desc,
-							ToolName:    getString(toolMap, "toolName"),
-							Transport:   tr,
+							Pool:        b.pool,
+							Target:      targetFromConfig(toolMap),
 						})
 						comp.Register(toolImpl)
 					}
@@ -248,21 +211,13 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 					name := getString(hookMap, "name")
 					driver := getString(hookMap, "driver")
 					events := getEvents(hookMap, "events")
-					switch DriverType(driver) {
-					case DriverHTTP:
-						tr := b.newHTTPTransport(hookMap, "hook")
+					switch driver {
+					case "http", "process":
 						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
-							Name:      name,
-							Events:    events,
-							Transport: tr,
-						})
-						comp.Register(hookImpl)
-					case DriverProcess:
-						tr := b.newStdioTransport(hookMap, "hook")
-						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
-							Name:      name,
-							Events:    events,
-							Transport: tr,
+							Name:   name,
+							Events: events,
+							Pool:   b.pool,
+							Target: targetFromConfig(hookMap),
 						})
 						comp.Register(hookImpl)
 					}
@@ -275,19 +230,12 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 }
 
 func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentEventBus))
+	switch cc.Driver {
+	case "http", "process":
 		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return eventbus.NewComponent(cc.Name, eb), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentEventBus))
-		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return eventbus.NewComponent(cc.Name, eb), nil
 	default:
@@ -296,19 +244,12 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 }
 
 func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentContextManager))
+	switch cc.Driver {
+	case "http", "process":
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return contextmanager.NewComponent(cc.Name, cm), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentContextManager))
-		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
@@ -317,19 +258,12 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 }
 
 func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentMemory))
+	switch cc.Driver {
+	case "http", "process":
 		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return memory.NewComponent(cc.Name, m), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentMemory))
-		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return memory.NewComponent(cc.Name, m), nil
 	default:
@@ -345,19 +279,12 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 		ReadOnlyRoot:    getBool(cc.Config, "readOnlyRoot", false),
 	}
 
-	switch DriverType(cc.Driver) {
-	case DriverHTTP:
-		t := b.newHTTPTransport(cc.Config, string(component.ComponentSandbox))
+	switch cc.Driver {
+	case "http", "process":
 		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
-			Name:      cc.Name,
-			Transport: t,
-		})
-		return sandbox.NewComponent(cc.Name, s, limits), nil
-	case DriverProcess:
-		t := b.newStdioTransport(cc.Config, string(component.ComponentSandbox))
-		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
-			Name:      cc.Name,
-			Transport: t,
+			Name:   cc.Name,
+			Pool:   b.pool,
+			Target: targetFromConfig(cc.Config),
 		})
 		return sandbox.NewComponent(cc.Name, s, limits), nil
 	default:
@@ -381,66 +308,14 @@ func (b *Builder) buildLogger(cc ComponentConfig) (component.Component, error) {
 	return logger.NewComponent(cc.Name, l), nil
 }
 
-func (b *Builder) newStdioTransport(cfgMap map[string]any, component string) *client.StdioTransport {
-	return client.NewStdioTransport(client.StdioTransportConfig{
-		Command:        getString(cfgMap, "command"),
-		Args:           getStringSlice(cfgMap, "args"),
-		Env:            getStringSlice(cfgMap, "env"),
-		Component:      component,
-		Logger:         &transportLogAdapter{l: logger.Default()},
-		RequestHandler: b.lookupHandler(),
-	})
-}
-
-func (b *Builder) lookupHandler() transport.RequestHandler {
-	return func(_ context.Context, req transport.JSONRPCRequest) (*transport.JSONRPCResponse, error) {
-		switch req.Method {
-		case "services/lookup":
-			var params struct {
-				Type string `json:"type"`
-				Name string `json:"name"`
-			}
-			paramsRaw, _ := json.Marshal(req.Params)
-			json.Unmarshal(paramsRaw, &params)
-			compType := component.ComponentType(params.Type)
-			var comp component.Component
-			if params.Name != "" {
-				comp = b.registry.Get(params.Name)
-			} else {
-				comp = b.registry.GetDefault(compType)
-			}
-			result := map[string]string{}
-			if comp != nil {
-				result["name"] = comp.GetName()
-			}
-			raw, _ := json.Marshal(result)
-			return transport.NewJSONRPCResultResponse(req.ID, raw), nil
-		case "services/lookupAll":
-			var params struct {
-				Type string `json:"type"`
-			}
-			paramsRaw, _ := json.Marshal(req.Params)
-			json.Unmarshal(paramsRaw, &params)
-			comps := b.registry.GetByType(component.ComponentType(params.Type))
-			names := make([]string, len(comps))
-			for i, c := range comps {
-				names[i] = c.GetName()
-			}
-			raw, _ := json.Marshal(map[string][]string{"instances": names})
-			return transport.NewJSONRPCResultResponse(req.ID, raw), nil
-		default:
-			return transport.NewJSONRPCErrorResponse(req.ID, -32601, "method not found", nil), nil
-		}
-	}
-}
-
-func (b *Builder) newHTTPTransport(cfgMap map[string]any, component string) *client.HTTPTransport {
-	return client.NewHTTPTransport(client.HTTPTransportConfig{
-		Endpoint:  getString(cfgMap, "endpoint"),
-		Timeout:   getDuration(cfgMap, "timeout"),
-		Component: component,
-		Logger:    &transportLogAdapter{l: logger.Default()},
-	})
+// targetFromConfig extracts the gRPC target address from a component config map.
+// It reads the "endpoint" key and strips any http:// or https:// prefix,
+// since gRPC targets use bare host:port format (e.g. "localhost:9091").
+func targetFromConfig(cfgMap map[string]any) string {
+	ep := getString(cfgMap, "endpoint")
+	ep = strings.TrimPrefix(ep, "http://")
+	ep = strings.TrimPrefix(ep, "https://")
+	return ep
 }
 
 var componentDefaults = map[component.ComponentType]func() component.Component{
@@ -495,27 +370,7 @@ func (b *Builder) buildInterface() iface.Interface {
 	}
 }
 
-type transportLogAdapter struct {
-	l logger.Logger
-}
 
-func (a *transportLogAdapter) Log(ctx context.Context, entry client.LogEntry) {
-	fields := make([]logger.Field, len(entry.Fields))
-	for i, f := range entry.Fields {
-		fields[i] = logger.Field{Key: f.Key, Value: f.Value}
-	}
-	lvl := logger.InfoLevel
-	if entry.Level == client.ErrorLevel {
-		lvl = logger.ErrorLevel
-	}
-	a.l.Log(ctx, logger.LogEntry{
-		Level:    lvl,
-		Module:   entry.Module,
-		Message:  entry.Message,
-		Duration: entry.Duration,
-		Fields:   fields,
-	})
-}
 
 type BuildOption func(*Builder) error
 
@@ -617,18 +472,6 @@ func getBool(m map[string]any, key string, defaultVal bool) bool {
 		}
 	}
 	return defaultVal
-}
-
-func getDuration(m map[string]any, key string) time.Duration {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			d, err := time.ParseDuration(s)
-			if err == nil {
-				return d
-			}
-		}
-	}
-	return 0
 }
 
 func getStringSlice(m map[string]any, key string) []string {
