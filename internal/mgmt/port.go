@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type PortFile struct {
@@ -162,6 +163,99 @@ func RemoveAppPortFile(name string) {
 		return
 	}
 	os.Remove(filepath.Join(dir, name+".port"))
+}
+
+// ---------------------------------------------------------------------------
+// Per-component port files (~/.gogent/<appName>.<compName>.port)
+// ---------------------------------------------------------------------------
+
+// WriteComponentPortFile writes a component-level port file to
+// ~/.gogent/<appName>.<compName>.port.
+func WriteComponentPortFile(appName, compName, port string) error {
+	dir := gogentDir()
+	if dir == "" {
+		return fmt.Errorf("write component port file: cannot determine home directory")
+	}
+	filename := appName + "." + compName + ".port"
+	path := filepath.Join(dir, filename)
+	pf := PortFile{
+		PID:  os.Getpid(),
+		Port: port,
+		Name: compName,
+	}
+	data, err := json.Marshal(&pf)
+	if err != nil {
+		return fmt.Errorf("marshal component port file: %w", err)
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// ReadComponentPortFile reads a component-level port file from
+// ~/.gogent/<appName>.<compName>.port.
+func ReadComponentPortFile(appName, compName string) (*PortFile, error) {
+	dir := gogentDir()
+	if dir == "" {
+		return nil, fmt.Errorf("read component port file: cannot determine home directory")
+	}
+	filename := appName + "." + compName + ".port"
+	path := filepath.Join(dir, filename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("no component port file for %s/%s (no %s found)", appName, compName, filename)
+	}
+	var pf PortFile
+	if err := json.Unmarshal(data, &pf); err != nil {
+		return nil, fmt.Errorf("corrupt component port file: %w", err)
+	}
+	return &pf, nil
+}
+
+// RemoveComponentPortFile removes <appName>.<compName>.port from ~/.gogent/.
+func RemoveComponentPortFile(appName, compName string) {
+	dir := gogentDir()
+	if dir == "" {
+		return
+	}
+	os.Remove(filepath.Join(dir, appName+"."+compName+".port"))
+}
+
+// ListComponentPortFiles scans ~/.gogent/ for all component-level port files
+// (files matching *.*.port — two dots). App-level *.port (one dot) and
+// daemon.pid are excluded.
+func ListComponentPortFiles() ([]PortFile, error) {
+	dir := gogentDir()
+	if dir == "" {
+		return nil, fmt.Errorf("list component port files: cannot determine home directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("list component port files: %w", err)
+	}
+	var result []PortFile
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".port") {
+			continue
+		}
+		// Component-level files have two dots: <app>.<comp>.port
+		// App-level files have one dot:  <app>.port — skip those.
+		if strings.Count(name, ".") < 2 {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue // skip unreadable
+		}
+		var pf PortFile
+		if err := json.Unmarshal(data, &pf); err != nil {
+			continue // skip corrupt
+		}
+		result = append(result, pf)
+	}
+	return result, nil
 }
 
 

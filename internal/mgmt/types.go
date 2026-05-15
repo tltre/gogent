@@ -1,9 +1,16 @@
 package mgmt
 
+// ComponentInfo represents metadata for a managed component within an app
+// (or standalone for centralized services). Each process-driver component
+// has an OS PID; native components have Target = "".
 type ComponentInfo struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
+	Name    string `json:"name"`    // e.g. "provider-main" or "tool-service"
+	AppName string `json:"app_name"` // owning App (empty for centralized service)
+	Type    string `json:"type"`    // "provider"|"tool"|"memory"|...
+	Driver  string `json:"driver"`  // "process"|"http"|"native"
+	Target  string `json:"target"`  // dial target e.g. "localhost:54321" (native = "")
+	PID     int    `json:"pid"`     // OS PID (only for process driver; 0 otherwise)
+	Status  string `json:"status"`  // "running"|"stopped"|"error"
 }
 
 type HealthResult struct {
