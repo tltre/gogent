@@ -47,6 +47,11 @@ func runDaemon() error {
 	defer healthCancel()
 	d.StartHealthCheck(healthCtx, 5*time.Second)
 
+	// Start component health check (separate goroutine, checks every 15s)
+	compHealthCtx, compHealthCancel := context.WithCancel(context.Background())
+	defer compHealthCancel()
+	d.StartComponentHealthCheck(compHealthCtx, 15*time.Second)
+
 	// Start HTTP server (reg is nil since daemon is not a Component)
 	srv := mgmt.NewDaemonServer(port, nil, d)
 	defer srv.Shutdown(context.Background())
