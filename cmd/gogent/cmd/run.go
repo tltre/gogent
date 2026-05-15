@@ -33,7 +33,7 @@ func init() {
 
 func runAgent(configPath string, mgmtPort string) error {
 	// 1. Ensure daemon is running and get a client.
-	daemonClient, err := ensureDaemon(mgmtPort)
+	daemonClient, err := mgmt.EnsureDaemon(mgmtPort)
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
 	}

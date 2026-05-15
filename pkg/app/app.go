@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"github.com/tltre/gogent/internal/mgmt"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/iface"
 )
@@ -12,6 +14,7 @@ type App struct {
 	config   *Config
 	registry *component.Registry
 	iface    iface.Interface
+	mgmtPort string
 }
 
 func (a *App) Name() string {
@@ -56,6 +59,21 @@ func (a *App) GetByType(typ component.ComponentType) []component.Component {
 	return a.registry.GetByType(typ)
 }
 
+// hasProcessDriverComponents returns true if any component in the app's
+// config uses driver "process", indicating that component processes should
+// be managed by a daemon.
+func (a *App) hasProcessDriverComponents() bool {
+	if a.config == nil {
+		return false
+	}
+	for _, cc := range a.config.Components {
+		if cc.Driver == "process" {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) Run(ctx context.Context) error {
 	if err := a.Initialize(ctx); err != nil {
 		return err
@@ -64,14 +82,40 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	if a.iface != nil {
-		err := a.iface.Run(ctx, a.registry)
-		if err != nil {
-			return err
+	// Start management HTTP server (non-blocking goroutine).
+	var srv *mgmt.Server
+	if a.mgmtPort != "" {
+		srv = mgmt.Listen(a.mgmtPort, a.registry)
+		defer srv.Shutdown(context.Background())
+
+		if err := mgmt.WriteAppPortFile(a.Name(), a.mgmtPort); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: write port file: %v\n", err)
 		}
+
+		// Auto-detect/start daemon when process-driver components are present.
+		if a.hasProcessDriverComponents() {
+			if _, err := mgmt.EnsureDaemon(a.mgmtPort); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: daemon: %v\n", err)
+			}
+		}
+	}
+
+	var runErr error
+	if a.iface != nil {
+		runErr = a.iface.Run(ctx, a.registry)
 	} else {
 		<-ctx.Done()
 	}
 
-	return a.Stop(ctx)
+	// Cleanup (reverse order of setup).
+	if a.mgmtPort != "" {
+		mgmt.RemoveAppPortFile(a.Name())
+	}
+
+	if stopErr := a.Stop(ctx); stopErr != nil {
+		if runErr == nil {
+			runErr = stopErr
+		}
+	}
+	return runErr
 }

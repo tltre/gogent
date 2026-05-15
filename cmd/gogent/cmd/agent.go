@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/pkg/app"
 )
 
 var (
@@ -39,33 +39,29 @@ func forkAgent(configPath, listenPort string) error {
 		listenPort = ":" + listenPort
 	}
 
-	application, cancel, err := buildAndInitAgent(configPath)
+	builder, err := app.NewBuilder(configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("create builder: %w", err)
 	}
+
+	application, err := builder.Build(app.WithMgmtPort(listenPort))
+	if err != nil {
+		return fmt.Errorf("build application: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	done := make(chan struct{})
 	go func() {
 		<-sigChan
 		fmt.Fprintln(os.Stderr, "\nShutting down...")
 		cancel()
-		close(done)
 	}()
-
-	srv := mgmt.Listen(listenPort, application.Registry())
-	defer srv.Shutdown(context.Background())
-
-	if err := mgmt.WriteAppPortFile(application.Name(), listenPort); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: could not write port file: %v\n", err)
-	}
-	defer mgmt.RemoveAppPortFile(application.Name())
 
 	fmt.Fprintf(os.Stderr, "agent %q serving on %s  pid=%d\n", application.Name(), listenPort, os.Getpid())
 
-	<-done
-	return application.Stop(context.Background())
+	return application.Run(ctx)
 }

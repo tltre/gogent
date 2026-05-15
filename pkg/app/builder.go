@@ -28,6 +28,7 @@ type Builder struct {
 	iface      iface.Interface
 	cliEntries []cli.CommandEntry
 	pool       *grpctransport.Pool
+	mgmtPort   string
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -92,6 +93,7 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 	app := &App{
 		config:   b.config,
 		registry: b.registry,
+		mgmtPort: b.mgmtPort,
 	}
 
 	if b.iface != nil {
@@ -150,7 +152,7 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
-			Target: targetFromConfig(cc.Config),
+			Target: targetFromEnvOrConfig("GOGENT_AGENTCORE_TARGET", cc.Config),
 		})
 		return agentcore.NewComponent(cc.Name, core), nil
 	default:
@@ -164,7 +166,7 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
-			Target: targetFromConfig(cc.Config),
+			Target: targetFromEnvOrConfig("GOGENT_PROVIDER_TARGET", cc.Config),
 		})
 		return provider.NewComponent(cc.Name, p), nil
 	default:
@@ -189,7 +191,7 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 							Description: desc,
 							ToolName:    getString(toolMap, "toolName"),
 							Pool:        b.pool,
-							Target:      targetFromConfig(toolMap),
+							Target:      targetFromEnvOrConfig("GOGENT_TOOL_TARGET", toolMap),
 						})
 						comp.Register(toolImpl)
 					}
@@ -249,7 +251,7 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
-			Target: targetFromConfig(cc.Config),
+			Target: targetFromEnvOrConfig("GOGENT_CONTEXT_TARGET", cc.Config),
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
@@ -263,7 +265,7 @@ func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
-			Target: targetFromConfig(cc.Config),
+			Target: targetFromEnvOrConfig("GOGENT_MEMORY_TARGET", cc.Config),
 		})
 		return memory.NewComponent(cc.Name, m), nil
 	default:
@@ -316,6 +318,16 @@ func targetFromConfig(cfgMap map[string]any) string {
 	ep = strings.TrimPrefix(ep, "http://")
 	ep = strings.TrimPrefix(ep, "https://")
 	return ep
+}
+
+// targetFromEnvOrConfig checks the given environment variable first.
+// If the env var is set and non-empty, returns its value directly.
+// Otherwise falls back to targetFromConfig.
+func targetFromEnvOrConfig(envVar string, cfgMap map[string]any) string {
+	if t := os.Getenv(envVar); t != "" {
+		return t
+	}
+	return targetFromConfig(cfgMap)
 }
 
 var componentDefaults = map[component.ComponentType]func() component.Component{
@@ -444,6 +456,15 @@ func WithComponent(comp component.Component) BuildOption {
 		}
 
 		return b.registry.SetDefault(comp.GetType(), comp.GetName())
+	}
+}
+
+// WithMgmtPort sets the management port for the App. The mgmt HTTP server
+// is started automatically by app.Run() on this port.
+func WithMgmtPort(port string) BuildOption {
+	return func(b *Builder) error {
+		b.mgmtPort = port
+		return nil
 	}
 }
 
