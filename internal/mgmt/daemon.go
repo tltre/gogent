@@ -112,6 +112,12 @@ func (d *Daemon) ComponentStore() *ComponentStore {
 	return d.compStore
 }
 
+// GRPCHealthCheck performs a public gRPC health check against the target.
+// Exposed for the HTTP handler to use for real-time per-component probing.
+func (d *Daemon) GRPCHealthCheck(target string) error {
+	return d.grpcHealthCheck(target)
+}
+
 // ListApps returns a slice of all registered AppInfo entries.
 func (d *Daemon) ListApps() []AppInfo {
 	return d.store.List()

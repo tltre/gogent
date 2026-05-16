@@ -34,6 +34,12 @@ func (c *Client) Health() ([]HealthResult, error) {
 	return results, err
 }
 
+func (c *Client) ComponentsHealth() ([]ComponentHealthResult, error) {
+	var results []ComponentHealthResult
+	err := c.get("/api/v1/health/components", &results)
+	return results, err
+}
+
 func (c *Client) Info() (*InfoResponse, error) {
 	var info InfoResponse
 	err := c.get("/api/v1/info", &info)

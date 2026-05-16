@@ -18,7 +18,13 @@ var doctorCmd = &cobra.Command{
 		client := mgmt.NewClient(mgmtPort)
 
 		if len(args) == 0 {
-			// Try daemon mode: show health for all registered apps
+			// Try daemon's real-time component health probe first
+			compResults, compErr := client.ComponentsHealth()
+			if compErr == nil {
+				printComponentsHealthTable(compResults)
+				return nil
+			}
+			// Fallback: try daemon mode via per-app health
 			apps, err := client.ListApps()
 			if err == nil && len(apps) > 0 {
 				for i, app := range apps {
@@ -76,6 +82,19 @@ func printHealthTable(results []mgmt.HealthResult) {
 			latency = r.Error
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Component, r.Status, latency)
+	}
+	w.Flush()
+}
+
+func printComponentsHealthTable(results []mgmt.ComponentHealthResult) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tTYPE\tDRIVER\tSTATUS\tLATENCY")
+	for _, r := range results {
+		latency := fmt.Sprintf("%dms", r.LatencyMs)
+		if r.Error != "" {
+			latency = r.Error
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Type, r.Driver, r.Status, latency)
 	}
 	w.Flush()
 }

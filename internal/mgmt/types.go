@@ -22,6 +22,15 @@ type HealthResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type ComponentHealthResult struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Driver    string `json:"driver"`
+	Status    string `json:"status"` // "ok"|"unhealthy"|"dead"|"unknown"
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+}
+
 type InfoResponse struct {
 	Name       string `json:"name"`
 	Version    string `json:"version"`

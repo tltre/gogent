@@ -88,6 +88,7 @@ func NewDaemonServer(addr string, reg *component.Registry, d *Daemon) *Server {
 	// Daemon-level endpoints
 	mux.HandleFunc("/api/v1/apps", s.handleApps)
 	mux.HandleFunc("/api/v1/apps/", s.handleAppsPath)
+	mux.HandleFunc("/api/v1/health/components", s.handleComponentsHealth)
 
 	// Agent-level endpoints
 	mux.HandleFunc("/api/v1/registry", s.handleRegistry)
@@ -186,6 +187,41 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func (s *Server) handleComponentsHealth(w http.ResponseWriter, r *http.Request) {
+	if s.daemon == nil {
+		http.Error(w, "not available in agent mode", http.StatusServiceUnavailable)
+		return
+	}
+	comps := s.daemon.ComponentStore().List()
+	var results []ComponentHealthResult
+	for _, comp := range comps {
+		result := ComponentHealthResult{
+			Name:   comp.Name,
+			Type:   comp.Type,
+			Driver: string(comp.Driver),
+		}
+		if comp.Driver == component.DriverProcess || comp.Driver == component.DriverHTTP {
+			if comp.Target == "" {
+				result.Status = "unknown"
+			} else {
+				start := time.Now()
+				if err := s.daemon.GRPCHealthCheck(comp.Target); err != nil {
+					result.Status = "unhealthy"
+					result.Error = err.Error()
+				} else {
+					result.Status = "ok"
+				}
+				result.LatencyMs = time.Since(start).Milliseconds()
+			}
+		} else {
+			result.Status = "ok" // native: no independent check, assume healthy
+		}
+		results = append(results, result)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
