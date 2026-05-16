@@ -17,6 +17,15 @@ const (
 	ComponentLogger         ComponentType = "logger"
 )
 
+// DriverType represents the transport driver for a component.
+type DriverType string
+
+const (
+	DriverProcess DriverType = "process"
+	DriverHTTP    DriverType = "http"
+	DriverNative  DriverType = "native"
+)
+
 type DependencySpec struct {
 	Type     ComponentType
 	Name     string

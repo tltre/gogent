@@ -134,7 +134,7 @@ func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error
 
 func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		ch := channel.NewProcessChannel(&channel.ProcessChannelConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -148,7 +148,7 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 
 func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -162,7 +162,7 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -185,7 +185,7 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 					desc := getString(toolMap, "description")
 					driver := getString(toolMap, "driver")
 					switch driver {
-					case "http", "process":
+					case string(component.DriverHTTP), string(component.DriverProcess):
 						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
 							Name:        name,
 							Description: desc,
@@ -214,7 +214,7 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 					driver := getString(hookMap, "driver")
 					events := getEvents(hookMap, "events")
 					switch driver {
-					case "http", "process":
+					case string(component.DriverHTTP), string(component.DriverProcess):
 						hookImpl := hook.NewProcessHook(&hook.ProcessHookConfig{
 							Name:   name,
 							Events: events,
@@ -233,7 +233,7 @@ func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 
 func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		eb := eventbus.NewProcessEventBus(&eventbus.ProcessEventBusConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -247,7 +247,7 @@ func (b *Builder) buildEventBus(cc ComponentConfig) (component.Component, error)
 
 func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		cm := contextmanager.NewProcessContextManager(&contextmanager.ProcessContextManagerConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -261,7 +261,7 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 
 func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		m := memory.NewProcessMemory(&memory.ProcessMemoryConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -282,7 +282,7 @@ func (b *Builder) buildSandbox(cc ComponentConfig) (component.Component, error) 
 	}
 
 	switch cc.Driver {
-	case "http", "process":
+	case string(component.DriverHTTP), string(component.DriverProcess):
 		s := sandbox.NewProcessSandbox(&sandbox.ProcessSandboxConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,

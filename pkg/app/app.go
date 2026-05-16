@@ -67,7 +67,7 @@ func (a *App) hasProcessDriverComponents() bool {
 		return false
 	}
 	for _, cc := range a.config.Components {
-		if cc.Driver == "process" {
+		if cc.Driver == string(component.DriverProcess) {
 			return true
 		}
 	}

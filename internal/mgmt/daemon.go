@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tltre/gogent/pkg/component"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -162,6 +163,23 @@ type daemonComponentConfig struct {
 	Config map[string]any `yaml:"config,omitempty"`
 }
 
+// getEndpoint extracts the endpoint from Config["endpoint"] if present.
+// Returns an empty string when no endpoint is configured.
+func (cc daemonComponentConfig) getEndpoint() string {
+	if cc.Config == nil {
+		return ""
+	}
+	ep, ok := cc.Config["endpoint"]
+	if !ok {
+		return ""
+	}
+	eps, ok := ep.(string)
+	if !ok {
+		return ""
+	}
+	return eps
+}
+
 // daemonAppConfig is a daemon-local struct for parsing the full app config.
 type daemonAppConfig struct {
 	Name       string                   `yaml:"name"`
@@ -263,8 +281,19 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		if !ok {
 			return "", fmt.Errorf("component %s referenced in defaults but not found in components list", compName)
 		}
-		if cc.Driver != "process" {
-			// Non-process driver — nothing to fork, no env var needed.
+		if cc.Driver != string(component.DriverProcess) {
+			// Non-process driver — register in ComponentStore for monitoring (no fork needed).
+			if _, exists := d.compStore.Get(compName); !exists {
+				info := &ComponentInfo{
+					Name:    compName,
+					AppName: cfg.Name,
+					Type:    compType,
+					Driver:  component.DriverType(cc.Driver),
+					Target:  cc.getEndpoint(),
+					Status:  "running",
+				}
+				d.compStore.Register(info)
+			}
 			return "", nil
 		}
 
@@ -315,7 +344,7 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 			Name:    compName,
 			AppName: cfg.Name,
 			Type:    compType,
-			Driver:  "process",
+			Driver:  component.DriverProcess,
 			Target:  target,
 			PID:     proc.Pid,
 			Status:  "running",
@@ -657,43 +686,55 @@ func (d *Daemon) StartComponentHealthCheck(ctx context.Context, interval time.Du
 }
 
 // runComponentHealthCheck iterates over all registered components and checks
-// their health. For each process-driver component:
-//   - Check PID alive via isProcessAlive
-//   - If alive: gRPC health ping via grpcHealthCheck
-//   - If dead/unreachable: try restartComponent
+// their health. Behavior varies by driver type:
+//   - process: PID liveness + gRPC health ping; dead → auto-restart (max 3 retries)
+//   - http: gRPC health ping (no PID check); unreachable → mark "error"
+//   - native: status stays "running" (App healthy = component healthy)
 // Components with status "error" are skipped (retries exhausted).
 func (d *Daemon) runComponentHealthCheck() {
 	comps := d.compStore.List()
 	for _, info := range comps {
-		if info.Driver != "process" {
-			continue
-		}
-		if info.PID == 0 {
-			continue
-		}
 		// Skip components that have exceeded retry limits.
 		if info.Status == "error" {
 			continue
 		}
 
-		alive := d.isProcessAlive(info.PID)
-		if alive {
-			// PID alive — verify gRPC health.
-			if err := d.grpcHealthCheck(info.Target); err != nil {
-				fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) gRPC health failed: %v — restarting\n",
-					info.Name, info.PID, err)
-				// Kill the hung process before restarting.
-				d.killProcess(info.PID)
-				alive = false
+		switch info.Driver {
+		case component.DriverProcess:
+			if info.PID == 0 {
+				continue
 			}
-		}
+			alive := d.isProcessAlive(info.PID)
+			if alive {
+				if err := d.grpcHealthCheck(info.Target); err != nil {
+					fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) gRPC health failed: %v — restarting\n",
+						info.Name, info.PID, err)
+					d.killProcess(info.PID)
+					alive = false
+				}
+			}
+			if !alive {
+				fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) is dead — attempting restart\n",
+					info.Name, info.PID)
+				if err := d.restartComponent(&info); err != nil {
+					fmt.Fprintf(os.Stderr, "[daemon] component %s restart failed: %v\n", info.Name, err)
+				}
+			}
 
-		if !alive {
-			fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) is dead — attempting restart\n",
-				info.Name, info.PID)
-			if err := d.restartComponent(&info); err != nil {
-				fmt.Fprintf(os.Stderr, "[daemon] component %s restart failed: %v\n", info.Name, err)
+		case component.DriverHTTP:
+			// gRPC health check (no PID check) — mark as "error" if unreachable.
+			if info.Target == "" {
+				continue
 			}
+			if err := d.grpcHealthCheck(info.Target); err != nil {
+				fmt.Fprintf(os.Stderr, "[daemon] component %s http health failed: %v\n",
+					info.Name, err)
+				d.compStore.UpdateStatus(info.Name, "error")
+			}
+
+		case component.DriverNative:
+			// Native components are tied to App lifecycle — status stays "running".
+			// No independent health check possible.
 		}
 	}
 }
