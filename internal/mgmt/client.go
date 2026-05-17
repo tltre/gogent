@@ -34,9 +34,13 @@ func (c *Client) Health() ([]HealthResult, error) {
 	return results, err
 }
 
-func (c *Client) ComponentsHealth() ([]ComponentHealthResult, error) {
+func (c *Client) ComponentsHealth(appName string) ([]ComponentHealthResult, error) {
 	var results []ComponentHealthResult
-	err := c.get("/api/v1/health/components", &results)
+	path := "/api/v1/health/components"
+	if appName != "" {
+		path += "?app=" + appName
+	}
+	err := c.get(path, &results)
 	return results, err
 }
 

@@ -271,12 +271,27 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 	// 3. Fork singleton components and collect targets for env injection.
 	envVars := os.Environ()
 	var spawned []spawnedComp
+	var allCompNames []string // all component names used by this app (for bi-directional mapping)
 	cleanup := func() {
+		// Clean up newly-forked component processes.
 		for _, sc := range spawned {
 			d.killProcess(sc.pid)
 			d.releasePort(sc.port)
 			d.compStore.Unregister(sc.name)
 			RemoveComponentPortFile(cfg.Name, sc.name)
+		}
+		// Remove this app from shared component Apps lists.
+		for _, name := range allCompNames {
+			isSpawned := false
+			for _, sc := range spawned {
+				if sc.name == name {
+					isSpawned = true
+					break
+				}
+			}
+			if !isSpawned {
+				d.compStore.RemoveApp(name, cfg.Name)
+			}
 		}
 	}
 
@@ -297,15 +312,22 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 					Driver:  component.DriverType(cc.Driver),
 					Target:  cc.getEndpoint(),
 					Status:  "running",
+					Apps:    []string{cfg.Name},
 				}
 				d.compStore.Register(info)
+			} else {
+				d.compStore.AppendApp(compName, cfg.Name)
 			}
+			allCompNames = append(allCompNames, compName)
 			return "", nil
 		}
 
 		// Check if already registered in ComponentStore.
 		if existing, exists := d.compStore.Get(compName); exists {
 			if d.isProcessAlive(existing.PID) {
+				// Shared component — add this app to its Apps list.
+				d.compStore.AppendApp(compName, cfg.Name)
+				allCompNames = append(allCompNames, compName)
 				return existing.Target, nil
 			}
 			// Dead process — clean up and re-fork.
@@ -339,6 +361,7 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		}
 
 		spawned = append(spawned, spawnedComp{name: compName, pid: proc.Pid, port: port})
+		allCompNames = append(allCompNames, compName)
 
 		// Wait for gRPC health check (max 10s).
 		if err := d.waitForComponentHealth(target, 10*time.Second); err != nil {
@@ -354,6 +377,7 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 			Target:  target,
 			PID:     proc.Pid,
 			Status:  "running",
+			Apps:    []string{cfg.Name},
 		}
 		if err := d.compStore.Register(info); err != nil {
 			return "", fmt.Errorf("register component %s: %w", compName, err)
@@ -467,6 +491,7 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		Status:     "running",
 		ConfigPath: absConfig,
 		StartedAt:  now,
+		Components: allCompNames,
 	}
 	if err := d.store.Register(info); err != nil {
 		d.killProcess(pid)
@@ -526,16 +551,17 @@ func (d *Daemon) grpcHealthCheck(target string) error {
 	return nil
 }
 
-// StopApp stops a running app by name. It sends a termination signal, waits
-// up to 5s for the process to exit, unregisters it from the store, and
-// removes the port file.
+// StopApp stops a running app by name. It kills the app process, then
+// iterates over the app's component list. For each component, it removes
+// the app from the component's Apps list. When no more apps use a component,
+// the component process is killed and unregistered.
 func (d *Daemon) StopApp(name string) error {
 	info, exists := d.store.Get(name)
 	if !exists {
 		return fmt.Errorf("app %s not found", name)
 	}
 
-	// Kill the process.
+	// Kill the app process.
 	if err := d.killProcess(info.PID); err != nil {
 		return fmt.Errorf("kill process: %w", err)
 	}
@@ -555,6 +581,25 @@ func (d *Daemon) StopApp(name string) error {
 			if !d.isProcessAlive(info.PID) {
 				exited = true
 			}
+		}
+	}
+
+	// Clean up components using the bidirectional mapping.
+	for _, compName := range info.Components {
+		compInfo, ok := d.compStore.Get(compName)
+		if !ok {
+			continue
+		}
+		// Remove this app from the component's Apps list.
+		remaining := d.compStore.RemoveApp(compName, name)
+		if remaining == 0 {
+			// No more apps using this component — shut it down.
+			if compInfo.Driver == component.DriverProcess {
+				d.killProcess(compInfo.PID)
+				d.releasePort(parsePortFromTarget(compInfo.Target))
+				RemoveComponentPortFile(name, compName)
+			}
+			d.compStore.Unregister(compName)
 		}
 	}
 
@@ -581,6 +626,17 @@ func (d *Daemon) RestartApp(name string) (*AppInfo, error) {
 	}
 
 	return d.LoadApp(configPath)
+}
+
+// parsePortFromTarget extracts the port number from a target string like
+// "localhost:54321". Returns 0 if parsing fails.
+func parsePortFromTarget(target string) int {
+	parts := strings.Split(target, ":")
+	if len(parts) < 2 {
+		return 0
+	}
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	return port
 }
 
 // StartHealthCheck launches a background goroutine that periodically checks
@@ -628,19 +684,45 @@ func (d *Daemon) runHealthCheck() {
 	}
 }
 
-// cleanupAppComponents kills all component processes belonging to an app,
-// unregisters them from the ComponentStore, and removes their port files.
+// cleanupAppComponents uses the bidirectional App→Component mapping to
+// remove an app from each component's Apps list. When no more apps use a
+// component, the component process is killed and unregistered.
 func (d *Daemon) cleanupAppComponents(appName string) {
-	comps := d.compStore.ListByApp(appName)
-	for _, comp := range comps {
-		if comp.PID > 0 {
-			if err := d.killProcess(comp.PID); err != nil {
-				fmt.Fprintf(os.Stderr, "[daemon] warn: kill component %s (pid %d): %v\n",
-					comp.Name, comp.PID, err)
+	info, exists := d.store.Get(appName)
+	if !exists {
+		// Fallback: use ListByApp for backward compatibility.
+		comps := d.compStore.ListByApp(appName)
+		for _, comp := range comps {
+			if comp.PID > 0 {
+				if err := d.killProcess(comp.PID); err != nil {
+					fmt.Fprintf(os.Stderr, "[daemon] warn: kill component %s (pid %d): %v\n",
+						comp.Name, comp.PID, err)
+				}
 			}
+			d.compStore.Unregister(comp.Name)
+			RemoveComponentPortFile(appName, comp.Name)
 		}
-		d.compStore.Unregister(comp.Name)
-		RemoveComponentPortFile(appName, comp.Name)
+		return
+	}
+
+	for _, compName := range info.Components {
+		compInfo, ok := d.compStore.Get(compName)
+		if !ok {
+			continue
+		}
+		remaining := d.compStore.RemoveApp(compName, appName)
+		if remaining == 0 {
+			// No more apps using this component — shut it down.
+			if compInfo.Driver == component.DriverProcess && compInfo.PID > 0 {
+				if err := d.killProcess(compInfo.PID); err != nil {
+					fmt.Fprintf(os.Stderr, "[daemon] warn: kill component %s (pid %d): %v\n",
+						compName, compInfo.PID, err)
+				}
+				d.releasePort(parsePortFromTarget(compInfo.Target))
+			}
+			d.compStore.Unregister(compName)
+			RemoveComponentPortFile(appName, compName)
+		}
 	}
 }
 

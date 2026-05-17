@@ -18,13 +18,19 @@ var doctorCmd = &cobra.Command{
 		client := mgmt.NewClient(mgmtPort)
 
 		if len(args) == 0 {
-			// Try daemon's real-time component health probe first
-			compResults, compErr := client.ComponentsHealth()
+			// No args: get all component health from daemon, group by App.
+			compResults, compErr := client.ComponentsHealth("")
 			if compErr == nil {
-				printComponentsHealthTable(compResults)
+				// Try to group by app using the App→Component mapping.
+				apps, appErr := client.ListApps()
+				if appErr == nil && len(apps) > 0 {
+					printComponentsHealthGrouped(compResults, apps)
+				} else {
+					printComponentsHealthTable(compResults)
+				}
 				return nil
 			}
-			// Fallback: try daemon mode via per-app health
+			// Fallback: try daemon mode via per-app health.
 			apps, err := client.ListApps()
 			if err == nil && len(apps) > 0 {
 				for i, app := range apps {
@@ -42,9 +48,17 @@ var doctorCmd = &cobra.Command{
 				}
 				return nil
 			}
-			// Fallback: single-agent mode
+			// Fallback: single-agent mode.
 		} else {
+			// With arg: filtered component health for the named app.
 			name := args[0]
+			compResults, compErr := client.ComponentsHealth(name)
+			if compErr == nil {
+				fmt.Printf("=== %s ===\n", name)
+				printComponentsHealthTable(compResults)
+				return nil
+			}
+			// Fallback: try per-app health via AppStatus.
 			app, err := client.AppStatus(name)
 			if err == nil && app != nil {
 				appClient := mgmt.NewClient(app.Port)
@@ -59,7 +73,7 @@ var doctorCmd = &cobra.Command{
 			return fmt.Errorf("app %q not found via daemon: %w", name, err)
 		}
 
-		// Fallback: single agent (current behavior)
+		// Fallback: single agent (current behavior).
 		results, err := client.Health()
 		if err != nil {
 			return fmt.Errorf("connect: %w (is agent running on %s?)", err, mgmtPort)
@@ -97,4 +111,51 @@ func printComponentsHealthTable(results []mgmt.ComponentHealthResult) {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.Name, r.Type, r.Driver, r.Status, latency)
 	}
 	w.Flush()
+}
+
+// printComponentsHealthGrouped displays component health results grouped by
+// App using the bidirectional App→Component mapping from AppInfo.
+func printComponentsHealthGrouped(results []mgmt.ComponentHealthResult, apps []mgmt.AppInfo) {
+	// Build component→app lookup map from AppInfo.Components.
+	compApp := make(map[string]string) // component name → app name
+	for _, app := range apps {
+		for _, compName := range app.Components {
+			compApp[compName] = app.Name
+		}
+	}
+
+	// Group results by app.
+	appResults := make(map[string][]mgmt.ComponentHealthResult)
+	var uncategorized []mgmt.ComponentHealthResult
+	for _, r := range results {
+		if app, ok := compApp[r.Name]; ok {
+			appResults[app] = append(appResults[app], r)
+		} else {
+			uncategorized = append(uncategorized, r)
+		}
+	}
+
+	// Print per-app sections in app registration order.
+	printed := 0
+	for _, app := range apps {
+		compList, ok := appResults[app.Name]
+		if !ok {
+			continue
+		}
+		if printed > 0 {
+			fmt.Println()
+		}
+		fmt.Printf("=== %s ===\n", app.Name)
+		printComponentsHealthTable(compList)
+		printed++
+	}
+
+	// Print standalone components (not owned by any app).
+	if len(uncategorized) > 0 {
+		if printed > 0 {
+			fmt.Println()
+		}
+		fmt.Println("=== (standalone) ===")
+		printComponentsHealthTable(uncategorized)
+	}
 }

@@ -194,7 +194,29 @@ func (s *Server) handleComponentsHealth(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "not available in agent mode", http.StatusServiceUnavailable)
 		return
 	}
-	comps := s.daemon.ComponentStore().List()
+
+	appName := r.URL.Query().Get("app")
+
+	var comps []ComponentInfo
+	if appName != "" {
+		// Filtered: look up AppInfo, iterate its Components list.
+		appInfo, exists := s.daemon.GetApp(appName)
+		if !exists {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("app %q not found", appName)})
+			return
+		}
+		for _, compName := range appInfo.Components {
+			if compInfo, ok := s.daemon.ComponentStore().Get(compName); ok {
+				comps = append(comps, *compInfo)
+			}
+		}
+	} else {
+		// All components from ComponentStore.
+		comps = s.daemon.ComponentStore().List()
+	}
+
 	var results []ComponentHealthResult
 	for _, comp := range comps {
 		result := ComponentHealthResult{

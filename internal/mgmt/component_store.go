@@ -129,3 +129,45 @@ func (s *ComponentStore) UpdatePID(name string, pid int) error {
 	info.PID = pid
 	return nil
 }
+
+// AppendApp appends an app name to a component's Apps list. Returns an error
+// if the component is not found. Does nothing if the app is already present.
+func (s *ComponentStore) AppendApp(name, appName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	info, exists := s.comps[name]
+	if !exists {
+		return fmt.Errorf("component %s not found", name)
+	}
+
+	for _, a := range info.Apps {
+		if a == appName {
+			return nil // already present
+		}
+	}
+	info.Apps = append(info.Apps, appName)
+	return nil
+}
+
+// RemoveApp removes an app name from a component's Apps list. Returns an error
+// if the component is not found. Returns the remaining count of apps using
+// the component (or -1 if not found).
+func (s *ComponentStore) RemoveApp(name, appName string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	info, exists := s.comps[name]
+	if !exists {
+		return -1
+	}
+
+	updated := make([]string, 0, len(info.Apps))
+	for _, a := range info.Apps {
+		if a != appName {
+			updated = append(updated, a)
+		}
+	}
+	info.Apps = updated
+	return len(updated)
+}

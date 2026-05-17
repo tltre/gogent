@@ -6,13 +6,14 @@ import "github.com/tltre/gogent/pkg/component"
 // (or standalone for centralized services). Each process-driver component
 // has an OS PID; native components have Target = "".
 type ComponentInfo struct {
-	Name    string `json:"name"`    // e.g. "provider-main" or "tool-service"
-	AppName string `json:"app_name"` // owning App (empty for centralized service)
-	Type    string `json:"type"`    // "provider"|"tool"|"memory"|...
-	Driver  component.DriverType `json:"driver"`  // "process"|"http"|"native"
-	Target  string `json:"target"`  // dial target e.g. "localhost:54321" (native = "")
-	PID     int    `json:"pid"`     // OS PID (only for process driver; 0 otherwise)
-	Status  string `json:"status"`  // "running"|"stopped"|"error"
+	Name    string               `json:"name"`           // e.g. "provider-main" or "tool-service"
+	AppName string               `json:"app_name"`       // owning App (empty for centralized service)
+	Type    string               `json:"type"`           // "provider"|"tool"|"memory"|...
+	Driver  component.DriverType `json:"driver"`         // "process"|"http"|"native"
+	Target  string               `json:"target"`         // dial target e.g. "localhost:54321" (native = "")
+	PID     int                  `json:"pid"`            // OS PID (only for process driver; 0 otherwise)
+	Status  string               `json:"status"`         // "running"|"stopped"|"error"
+	Apps    []string             `json:"apps,omitempty"` // app names using this component
 }
 
 type HealthResult struct {
@@ -32,20 +33,21 @@ type ComponentHealthResult struct {
 }
 
 type InfoResponse struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	GoVersion  string `json:"go_version"`
-	UptimeSec  int64  `json:"uptime_seconds"`
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	GoVersion string `json:"go_version"`
+	UptimeSec int64  `json:"uptime_seconds"`
 }
 
 // AppInfo represents metadata for a running app instance.
 type AppInfo struct {
-	Name       string `json:"name"`
-	Port       string `json:"port"`
-	PID        int    `json:"pid"`
-	Status     string `json:"status"`      // "running" | "stopped" | "error"
-	ConfigPath string `json:"config_path"`
-	StartedAt  int64  `json:"started_at"`  // unix timestamp
+	Name       string   `json:"name"`
+	Port       string   `json:"port"`
+	PID        int      `json:"pid"`
+	Status     string   `json:"status"` // "running" | "stopped" | "error"
+	ConfigPath string   `json:"config_path"`
+	StartedAt  int64    `json:"started_at"`           // unix timestamp
+	Components []string `json:"components,omitempty"` // component names used by this app
 }
 
 // LoadAppRequest is the request body for loading a new app into the daemon.
@@ -55,8 +57,8 @@ type LoadAppRequest struct {
 
 // AgentRunRequest is the request body for POST /api/v1/agent/run.
 type AgentRunRequest struct {
-	Messages []AgentMessage    `json:"messages"`
-	Context  map[string]any    `json:"context,omitempty"`
+	Messages []AgentMessage `json:"messages"`
+	Context  map[string]any `json:"context,omitempty"`
 }
 
 // AgentMessage mirrors agentcore.Message for JSON transport.
@@ -67,10 +69,10 @@ type AgentMessage struct {
 
 // AgentRunResponse is the response body for POST /api/v1/agent/run.
 type AgentRunResponse struct {
-	Response AgentMessage    `json:"response"`
-	Actions  []AgentAction   `json:"actions,omitempty"`
-	Metadata map[string]any  `json:"metadata,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	Response AgentMessage   `json:"response"`
+	Actions  []AgentAction  `json:"actions,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+	Error    string         `json:"error,omitempty"`
 }
 
 // AgentAction mirrors agentcore.Action for JSON transport.
