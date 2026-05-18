@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessContextManagerConfig holds the configuration for a gRPC-based ProcessContextManager.
@@ -47,12 +49,20 @@ func (c *ProcessContextManager) getClient() (gogentv1.ContextManagerServiceClien
 
 // NewSession creates a new conversation session via gRPC.
 func (c *ProcessContextManager) NewSession() string {
+	tracer := otel.Tracer("gogent.contextmanager")
+	ctx, span := tracer.Start(context.Background(), "context.new_session")
+	defer span.End()
+
 	client, err := c.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return ""
 	}
-	resp, err := client.NewSession(context.Background(), &gogentv1.NewSessionRequest{})
+	resp, err := client.NewSession(ctx, &gogentv1.NewSessionRequest{})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return ""
 	}
 	return resp.SessionId

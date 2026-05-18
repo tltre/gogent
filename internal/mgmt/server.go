@@ -16,6 +16,8 @@ import (
 	"github.com/tltre/gogent/pkg/contextmanager"
 	"github.com/tltre/gogent/pkg/logger"
 	"github.com/tltre/gogent/pkg/tool"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Version is the framework version. Set via ldflags at build time.
@@ -59,9 +61,11 @@ func Listen(addr string, reg *component.Registry) *Server {
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
 	mux.HandleFunc("/api/v1/agent/run", s.handleAgentRun)
 
+	otelHandler := otelhttp.NewHandler(mux, "mgmt-agent")
+
 	s.http = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: otelHandler,
 	}
 
 	go func() {
@@ -98,9 +102,11 @@ func NewDaemonServer(addr string, reg *component.Registry, d *Daemon) *Server {
 	mux.HandleFunc("/api/v1/tools/exec", s.handleToolsExec)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
 
+	otelHandler := otelhttp.NewHandler(mux, "mgmt-daemon")
+
 	s.http = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: otelHandler,
 	}
 
 	go func() {

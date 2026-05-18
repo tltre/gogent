@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/tltre/gogent/internal/grpctransport"
+	internal_otel "github.com/tltre/gogent/internal/otel"
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/channel"
 	"github.com/tltre/gogent/pkg/component"
@@ -94,6 +96,14 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		config:   b.config,
 		registry: b.registry,
 		mgmtPort: b.mgmtPort,
+	}
+
+	if b.config.Observability.OTel.Enabled {
+		shutdown, err := internal_otel.InitFromConfig(context.Background(), b.config.Observability.OTel)
+		if err != nil {
+			return nil, fmt.Errorf("init otel: %w", err)
+		}
+		app.otelShutdown = shutdown
 	}
 
 	if b.iface != nil {

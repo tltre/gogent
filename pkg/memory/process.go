@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessMemoryConfig holds the configuration for a gRPC-based ProcessMemory.
@@ -68,14 +72,26 @@ func (m *ProcessMemory) AddBatch(ctx context.Context, items []MemoryItem) error 
 
 // Query searches memory via gRPC.
 func (m *ProcessMemory) Query(ctx context.Context, q Query) ([]MemoryItem, error) {
+	tracer := otel.Tracer("gogent.memory")
+	ctx, span := tracer.Start(ctx, "memory.query",
+		trace.WithAttributes(
+			attribute.String("query", q.Text),
+		),
+	)
+	defer span.End()
+
 	client, err := m.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	resp, err := client.Query(ctx, &gogentv1.QueryRequest{
 		Query: queryToProto(&q),
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	return memoryItemsFromProto(resp.Items), nil

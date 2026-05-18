@@ -10,11 +10,14 @@ import (
 	"github.com/tltre/gogent/pkg/iface"
 )
 
+type otelShutdownFn func(context.Context) error
+
 type App struct {
-	config   *Config
-	registry *component.Registry
-	iface    iface.Interface
-	mgmtPort string
+	config       *Config
+	registry     *component.Registry
+	iface        iface.Interface
+	mgmtPort     string
+	otelShutdown otelShutdownFn
 }
 
 func (a *App) Name() string {
@@ -44,7 +47,19 @@ func (a *App) Start(ctx context.Context) error {
 }
 
 func (a *App) Stop(ctx context.Context) error {
-	return a.registry.StopAll(ctx)
+	var errs []error
+	if a.otelShutdown != nil {
+		if err := a.otelShutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("otel shutdown: %w", err))
+		}
+	}
+	if err := a.registry.StopAll(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("stop errors: %v", errs)
+	}
+	return nil
 }
 
 func (a *App) Get(name string) component.Component {

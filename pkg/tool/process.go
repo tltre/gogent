@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessToolConfig holds the configuration for a gRPC-based ProcessTool.
@@ -55,12 +59,24 @@ func (t *ProcessTool) Info() ToolInfo {
 
 // Execute sends a tool execution request to the remote tool service via gRPC.
 func (t *ProcessTool) Execute(ctx context.Context, params map[string]any) (Result, error) {
+	tracer := otel.Tracer("gogent.tool")
+	ctx, span := tracer.Start(ctx, "tool.execute",
+		trace.WithAttributes(
+			attribute.String("tool", t.cfg.ToolName),
+		),
+	)
+	defer span.End()
+
 	client, err := t.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Result{}, err
 	}
 	pbParams, err := structpb.NewStruct(params)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Result{}, fmt.Errorf("tool: convert params: %w", err)
 	}
 	req := &gogentv1.ExecuteToolRequest{
@@ -69,6 +85,8 @@ func (t *ProcessTool) Execute(ctx context.Context, params map[string]any) (Resul
 	}
 	resp, err := client.ExecuteTool(ctx, req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Result{}, err
 	}
 	if resp.Result == nil {

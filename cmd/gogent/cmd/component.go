@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -48,7 +49,9 @@ func runComponent(name, port, typ string) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+	)
 	hs := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, hs)
 	hs.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)

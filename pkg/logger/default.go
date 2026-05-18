@@ -89,6 +89,14 @@ func (l *DefaultLogger) Log(ctx context.Context, entry LogEntry) {
 	case ErrorLevel:
 		l.logger.Error(entry.Message, fields...)
 	}
+
+	// TODO: OTel log emission (best-effort)
+	// When OTel LoggerProvider is set, send a log record with trace context.
+	// Uses the global OTel log API (go.opentelemetry.io/otel/log).
+	// Skip if OTel is not configured (zero overhead) — nil check on global LoggerProvider.
+	//
+	// OTel Logs Bridge API is Beta and complex; revisit when stable.
+	// Example: otel.GetLoggerProvider().Logger("gogent").Emit(ctx, record)
 }
 
 func (l *DefaultLogger) Level() Level { return l.level }

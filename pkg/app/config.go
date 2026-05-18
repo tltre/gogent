@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	internal_otel "github.com/tltre/gogent/internal/otel"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,11 +17,16 @@ func ParseConfig(data []byte) (*Config, error) {
 }
 
 type Config struct {
-	Name       string            `yaml:"name"`
-	Version    string            `yaml:"version"`
-	Interface  InterfaceConfig   `yaml:"interface,omitempty"`
-	Components []ComponentConfig `yaml:"components,omitempty"`
-	Defaults   map[string]string `yaml:"defaults,omitempty"`
+	Name          string              `yaml:"name"`
+	Version       string              `yaml:"version"`
+	Interface     InterfaceConfig     `yaml:"interface,omitempty"`
+	Components    []ComponentConfig   `yaml:"components,omitempty"`
+	Defaults      map[string]string   `yaml:"defaults,omitempty"`
+	Observability ObservabilityConfig `yaml:"observability,omitempty"`
+}
+
+type ObservabilityConfig struct {
+	OTel internal_otel.Config `yaml:"otel,omitempty"`
 }
 
 type InterfaceConfig struct {

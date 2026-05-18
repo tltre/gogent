@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessProviderConfig holds the configuration for a gRPC-based ProcessProvider.
@@ -45,8 +49,18 @@ func (p *ProcessProvider) getClient() (gogentv1.ProviderServiceClient, error) {
 
 // Generate sends a generation request to the remote provider via gRPC.
 func (p *ProcessProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
+	tracer := otel.Tracer("gogent.provider")
+	ctx, span := tracer.Start(ctx, "provider.generate",
+		trace.WithAttributes(
+			attribute.Int("msg_count", len(messages)),
+		),
+	)
+	defer span.End()
+
 	client, err := p.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Response{}, err
 	}
 	req := &gogentv1.GenerateRequest{
@@ -54,6 +68,8 @@ func (p *ProcessProvider) Generate(ctx context.Context, messages []ProviderMessa
 	}
 	resp, err := client.Generate(ctx, req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Response{}, err
 	}
 	return generateResponseFromProto(resp), nil

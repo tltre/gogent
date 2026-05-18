@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessSandboxConfig holds the configuration for a gRPC-based ProcessSandbox.
@@ -45,12 +50,20 @@ func (s *ProcessSandbox) getClient() (gogentv1.SandboxServiceClient, error) {
 
 // Create allocates a new sandbox instance via gRPC.
 func (s *ProcessSandbox) Create(ctx context.Context) (string, error) {
+	tracer := otel.Tracer("gogent.sandbox")
+	ctx, span := tracer.Start(ctx, "sandbox.create")
+	defer span.End()
+
 	client, err := s.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
 	resp, err := client.Create(ctx, &gogentv1.CreateRequest{})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
 	return resp.SandboxId, nil
@@ -68,12 +81,25 @@ func (s *ProcessSandbox) Destroy(ctx context.Context, id string) error {
 
 // Execute runs code inside an existing sandbox via gRPC.
 func (s *ProcessSandbox) Execute(ctx context.Context, sandboxID string, req ExecRequest) (ExecResult, error) {
+	tracer := otel.Tracer("gogent.sandbox")
+	ctx, span := tracer.Start(ctx, "sandbox.execute",
+		trace.WithAttributes(
+			attribute.String("sandbox_id", sandboxID),
+			attribute.String("language", req.Language),
+		),
+	)
+	defer span.End()
+
 	client, err := s.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return ExecResult{}, err
 	}
 	resp, err := client.Execute(ctx, execRequestToProto(sandboxID, req))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return ExecResult{}, err
 	}
 	return execResultFromProto(resp), nil

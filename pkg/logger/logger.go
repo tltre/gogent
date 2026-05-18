@@ -4,6 +4,8 @@ import (
 	"context"
 	"math/rand"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Level int8
@@ -70,6 +72,9 @@ func WithTraceID(ctx context.Context) context.Context {
 }
 
 func TraceIDFromContext(ctx context.Context) string {
+	if span := trace.SpanFromContext(ctx); span.SpanContext().HasTraceID() {
+		return span.SpanContext().TraceID().String()
+	}
 	if id, ok := ctx.Value(traceIDKey).(string); ok {
 		return id
 	}

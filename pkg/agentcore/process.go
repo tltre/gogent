@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	"github.com/tltre/gogent/internal/otel"
 )
 
 // ProcessAgentCoreConfig holds the configuration for a gRPC-based ProcessAgentCore.
@@ -46,8 +50,18 @@ func (a *ProcessAgentCore) getClient() (gogentv1.AgentCoreServiceClient, error) 
 
 // Run executes the agent with the given input via gRPC and returns the final output.
 func (a *ProcessAgentCore) Run(ctx context.Context, input Input) (Output, error) {
+	tracer := otel.Tracer("gogent.agentcore")
+	ctx, span := tracer.Start(ctx, "agent.run",
+		trace.WithAttributes(
+			attribute.Int("msg_count", len(input.Messages)),
+		),
+	)
+	defer span.End()
+
 	client, err := a.getClient()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Output{}, err
 	}
 
@@ -55,6 +69,8 @@ func (a *ProcessAgentCore) Run(ctx context.Context, input Input) (Output, error)
 		Input: inputToProto(input),
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return Output{}, err
 	}
 	return outputFromProto(resp.Output), nil
