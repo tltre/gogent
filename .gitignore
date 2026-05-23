@@ -7,6 +7,11 @@
 
 # opencode
 .opencode/
+opencode.jsonc
+opencode.json
+
+# CodeGraph index (tool-generated, not project code)
+.codegraph/
 
 # Sisyphus plans and state
 .sisyphus/
@@ -28,3 +33,5 @@ vendor/
 
 # Tests
 tests/
+
+polygrapher/
