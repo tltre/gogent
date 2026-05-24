@@ -171,7 +171,7 @@ func RemoveAppPortFile(name string) {
 
 // WriteComponentPortFile writes a component-level port file to
 // ~/.gogent/<appName>.<compName>.port.
-func WriteComponentPortFile(appName, compName, port string) error {
+func WriteComponentPortFile(appName, compName, port string, pid int) error {
 	dir := gogentDir()
 	if dir == "" {
 		return fmt.Errorf("write component port file: cannot determine home directory")
@@ -179,7 +179,7 @@ func WriteComponentPortFile(appName, compName, port string) error {
 	filename := appName + "." + compName + ".port"
 	path := filepath.Join(dir, filename)
 	pf := PortFile{
-		PID:  os.Getpid(),
+		PID:  pid,
 		Port: port,
 		Name: compName,
 	}

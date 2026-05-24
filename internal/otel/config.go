@@ -2,9 +2,11 @@ package otel
 
 import (
 	"context"
+	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -16,7 +18,7 @@ import (
 // Config holds the configuration for OpenTelemetry tracing initialisation.
 type Config struct {
 	Enabled        bool    `yaml:"enabled"`
-	Endpoint       string  `yaml:"endpoint"`        // OTLP gRPC endpoint, e.g. "localhost:4317"
+	Endpoint       string  `yaml:"endpoint"`        // OTLP gRPC endpoint (e.g. "localhost:4317") or "console" for stdout
 	ServiceName    string  `yaml:"service_name"`    // logical service name
 	ServiceVersion string  `yaml:"service_version"` // service version string
 	Environment    string  `yaml:"environment"`     // deployment environment, e.g. "production"
@@ -39,17 +41,28 @@ func InitFromConfig(ctx context.Context, cfg Config) (func(context.Context) erro
 		propagation.TraceContext{}, propagation.Baggage{},
 	))
 
-	// Establish a gRPC connection to the OTLP collector.
-	conn, err := grpc.NewClient(cfg.Endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
-	if err != nil {
-		return nil, err
+	// Create the trace exporter: OTLP gRPC or console.
+	var traceExporter sdktrace.SpanExporter
+	if cfg.Endpoint == "console" {
+		var err error
+		traceExporter, err = stdouttrace.New(
+			stdouttrace.WithWriter(os.Stderr),
+			stdouttrace.WithPrettyPrint(),
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		conn, err := grpc.NewClient(cfg.Endpoint,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			return nil, err
+		}
+		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Choose a sampler: always sample unless an explicit ratio is given.

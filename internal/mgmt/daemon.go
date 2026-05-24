@@ -383,8 +383,8 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 			return "", fmt.Errorf("register component %s: %w", compName, err)
 		}
 
-		// Write port file.
-		if err := WriteComponentPortFile(cfg.Name, compName, ":"+portStr); err != nil {
+		// Write port file with the component process PID.
+		if err := WriteComponentPortFile(cfg.Name, compName, ":"+portStr, proc.Pid); err != nil {
 			fmt.Fprintf(os.Stderr, "[daemon] warn: write port file for %s: %v\n", compName, err)
 		}
 
@@ -904,8 +904,8 @@ func (d *Daemon) restartComponent(info *ComponentInfo) error {
 	d.compStore.UpdatePID(name, proc.Pid)
 	d.compStore.UpdateStatus(name, "running")
 
-	// Write new port file.
-	if err := WriteComponentPortFile(info.AppName, info.Name, ":"+strconv.Itoa(portNum)); err != nil {
+	// Write new port file with the restarted component process PID.
+	if err := WriteComponentPortFile(info.AppName, info.Name, ":"+strconv.Itoa(portNum), proc.Pid); err != nil {
 		fmt.Fprintf(os.Stderr, "[daemon] warn: write port file for %s: %v\n", name, err)
 	}
 

@@ -19,7 +19,7 @@ go vet ./...                                # static analysis
 go test ./tests/native/ -v -timeout 30s     # native mock tests (13)
 go test ./tests/stdio/ -v -timeout 60s      # stdio round-trip tests (13)
 go test ./tests/http/ -v -timeout 30s       # http round-trip tests (9)
-go test ./tests/integration/ -v -timeout 60s # full integration test (1)
+go test ./tests/e2e/ -v -timeout 60s        # full integration test (1)
 go test ./tests/cli/ -v -timeout 30s        # CLI framework tests (19)
 ```
 
@@ -473,3 +473,52 @@ Builder registers the lookup handler on all stdio transports via `StdioTransport
 9. **管理通道放在 `internal/mgmt/`**: 不是 `pkg/` 下的公共包。CLI 子命令通过 HTTP client 连接已在运行的 agent 的管理端口。端口发现通过 `--port` flag 指定，写入运行时文件供后续命令自动读取。
 
 10. **Two distinct CLI layers**: The **application CLI** (`pkg/iface/cli/`) serves end-user interaction (chat/run/version); the **framework CLI** (`cmd/gogent/cmd/`) serves DevOps management (status/doctor/logs). They operate at different layers and do not overlap.
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+This project has a CodeGraph MCP server (`codegraph_*` tools) configured. CodeGraph is a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads are sub-millisecond and return structural information grep cannot.
+
+### When to prefer codegraph over native search
+
+Use codegraph for **structural** questions — what calls what, what would break, where is X defined, what is X's signature. Use native grep/read only for **literal text** queries (string contents, comments, log messages) or after you already have a specific file open.
+
+| Question | Tool |
+|---|---|
+| "Where is X defined?" / "Find symbol named X" | `codegraph_search` |
+| "What calls function Y?" | `codegraph_callers` |
+| "What does Y call?" | `codegraph_callees` |
+| "What would break if I changed Z?" | `codegraph_impact` |
+| "Show me Y's signature / source / docstring" | `codegraph_node` |
+| "Give me focused context for a task/area" | `codegraph_context` |
+| "See several related symbols' source at once" | `codegraph_explore` |
+| "What files exist under path/" | `codegraph_files` |
+| "Is the index healthy?" | `codegraph_status` |
+
+### Rules of thumb
+
+- **Answer directly — don't delegate exploration.** For "how does X work" / architecture / trace questions, answer with 2-3 codegraph calls: `codegraph_context` first, then ONE `codegraph_explore` for the source of the symbols it surfaces. Codegraph IS the pre-built index, so spawning a separate file-reading sub-task/agent — or running a grep + read loop — repeats work codegraph already did and costs more for the same answer.
+- **Trust codegraph results.** They come from a full AST parse. Do NOT re-verify them with grep — that's slower, less accurate, and wastes context.
+- **Don't grep first** when looking up a symbol by name. `codegraph_search` is faster and returns kind + location + signature in one call.
+- **Don't chain `codegraph_search` + `codegraph_node`** when you just want context — `codegraph_context` is one call.
+- **Don't loop `codegraph_node` over many symbols** — one `codegraph_explore` call returns several symbols' source grouped in a single capped call, while each separate node/Read call re-reads the whole context and costs far more.
+- **Index lag**: the file watcher debounces ~500ms behind writes; don't re-query immediately after editing a file in the same turn.
+
+### If `.codegraph/` doesn't exist
+
+The MCP server returns "not initialized." Ask the user: *"I notice this project doesn't have CodeGraph initialized. Want me to run `codegraph init -i` to build the index?"*
+<!-- CODEGRAPH_END -->
+
+## Commit Message Conventions
+
+### DO NOT reference gitignored paths in commit messages
+
+Paths excluded by `.gitignore` (e.g., `tests/`, `.sisyphus/`) are not part of the repository.
+Referring to them in commit messages creates misleading history — a future developer reading
+the log has no way to find those paths in the checked-out tree.
+
+**Wrong**: `Migrate cmd/smokeotel to tests/e2e/demo`
+→ `tests/e2e/demo` does not exist in git, the message refers to untracked content.
+
+**Right**: Describe the logical change instead.
+`Add e2e test restructuring, demo app` or simply omit gitignored paths from the summary.
