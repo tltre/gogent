@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -99,8 +100,15 @@ func (c *Client) Ping() error {
 // --- Daemon-level app management methods ---
 
 // LoadApp sends a POST request to load a new app into the daemon.
-func (c *Client) LoadApp(configPath string) (*AppInfo, error) {
-	body, _ := json.Marshal(LoadAppRequest{ConfigPath: configPath})
+// When configPath is the only field, the daemon forks the full app (default).
+// Pass needForkApplication=false to only prepare components without forking the agent.
+func (c *Client) LoadApp(configPath string, needForkApplication ...bool) (*AppInfo, error) {
+	req := LoadAppRequest{ConfigPath: configPath}
+	if len(needForkApplication) > 0 && !needForkApplication[0] {
+		f := false
+		req.NeedForkApplication = &f
+	}
+	body, _ := json.Marshal(req)
 	var info AppInfo
 	err := c.post("/api/v1/apps", body, &info)
 	return &info, err
@@ -140,6 +148,10 @@ func (c *Client) get(path string, result any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) > 0 {
+			return fmt.Errorf("mgmt request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("mgmt request failed: %d", resp.StatusCode)
 	}
 
@@ -154,6 +166,10 @@ func (c *Client) post(path string, body []byte, result any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		if len(respBody) > 0 {
+			return fmt.Errorf("mgmt request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		}
 		return fmt.Errorf("mgmt request failed: %d", resp.StatusCode)
 	}
 

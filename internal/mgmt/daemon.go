@@ -242,7 +242,7 @@ type spawnedComp struct {
 // forks singleton components (provider, memory, contextmanager, agentcore)
 // and the shared ToolService, injects environment variables pointing to them,
 // then forks the App child process. Returns the AppInfo on success.
-func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
+func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo, error) {
 	// 1. Read and parse YAML config.
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -343,18 +343,27 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		portStr := strconv.Itoa(port)
 		target := "localhost:" + portStr
 
-		exePath, err := os.Executable()
-		if err != nil {
-			d.releasePort(port)
-			return "", fmt.Errorf("get executable path: %w", err)
+		// Determine what executable to fork:
+		//   config.command set → fork that binary (for e2e stubcomponents)
+		//   otherwise            → fork self with "component" subcommand
+		var exePath string
+		var args []string
+		if cmd, ok := cc.Config["command"].(string); ok && cmd != "" {
+			exePath = cmd
+			args = []string{exePath, "--port", portStr, "--type", compType}
+		} else {
+			exePath, err = os.Executable()
+			if err != nil {
+				d.releasePort(port)
+				return "", fmt.Errorf("get executable path: %w", err)
+			}
+			args = []string{exePath, "component", "--name", compName, "--port", portStr, "--type", compType}
 		}
 
 		attr := &os.ProcAttr{
 			Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
 		}
-		proc, err := os.StartProcess(exePath, []string{
-			exePath, "component", "--name", compName, "--port", portStr, "--type", compType,
-		}, attr)
+		proc, err := os.StartProcess(exePath, args, attr)
 		if err != nil {
 			d.releasePort(port)
 			return "", fmt.Errorf("fork component %s: %w", compName, err)
@@ -427,60 +436,62 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 	}
 	portStr := strconv.Itoa(port)
 
-	// 5. Fork the App child process with env vars injected.
-	exePath, err := os.Executable()
-	if err != nil {
-		cleanup()
-		d.releasePort(port)
-		return nil, fmt.Errorf("get executable path: %w", err)
-	}
-	absConfig, err := filepath.Abs(configPath)
-	if err != nil {
-		cleanup()
-		d.releasePort(port)
-		return nil, fmt.Errorf("resolve config path: %w", err)
-	}
-
-	attr := &os.ProcAttr{
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-		Env:   envVars,
-	}
-	proc, err := os.StartProcess(exePath, []string{
-		exePath, "agent", "--config", absConfig, "--port", portStr,
-	}, attr)
-	if err != nil {
-		cleanup()
-		d.releasePort(port)
-		return nil, fmt.Errorf("fork agent: %w", err)
-	}
-	pid := proc.Pid
-
-	// 6. Wait for agent to become healthy (max 10s, 200ms interval).
-	client := NewClient(":" + portStr)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	ready := false
-	for !ready {
-		select {
-		case <-ctx.Done():
-			// Timeout – kill the forked process, release the port, and clean up components.
-			d.killProcess(pid)
-			d.releasePort(port)
+	// 5. Fork the App child process with env vars injected (only when needed).
+	var pid int
+	if needForkApplication {
+		exePath, err := os.Executable()
+		if err != nil {
 			cleanup()
-			return nil, fmt.Errorf("agent %s did not become healthy within 10s", cfg.Name)
-		case <-ticker.C:
-			if err := client.Ping(); err == nil {
-				ready = true
+			d.releasePort(port)
+			return nil, fmt.Errorf("get executable path: %w", err)
+		}
+		absConfig, err := filepath.Abs(configPath)
+		if err != nil {
+			cleanup()
+			d.releasePort(port)
+			return nil, fmt.Errorf("resolve config path: %w", err)
+		}
+
+		attr := &os.ProcAttr{
+			Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+			Env:   envVars,
+		}
+		proc, err := os.StartProcess(exePath, []string{
+			exePath, "agent", "--config", absConfig, "--port", portStr,
+		}, attr)
+		if err != nil {
+			cleanup()
+			d.releasePort(port)
+			return nil, fmt.Errorf("fork agent: %w", err)
+		}
+		pid = proc.Pid
+
+		// 6. Wait for agent to become healthy (max 10s, 200ms interval).
+		client := NewClient(":" + portStr)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+
+		ready := false
+		for !ready {
+			select {
+			case <-ctx.Done():
+				d.killProcess(pid)
+				d.releasePort(port)
+				cleanup()
+				return nil, fmt.Errorf("agent %s did not become healthy within 10s", cfg.Name)
+			case <-ticker.C:
+				if err := client.Ping(); err == nil {
+					ready = true
+				}
 			}
 		}
-	}
 
-	// Port is now confirmed occupied by the agent — remove from reserved set.
-	d.releasePort(port)
+		// Port is now confirmed occupied by the agent — remove from reserved set.
+		d.releasePort(port)
+	}
 
 	// 7. Create AppInfo and register in store.
 	now := time.Now().Unix()
@@ -489,12 +500,18 @@ func (d *Daemon) LoadApp(configPath string) (*AppInfo, error) {
 		Port:       ":" + portStr,
 		PID:        pid,
 		Status:     "running",
-		ConfigPath: absConfig,
+		ConfigPath: configPath,
 		StartedAt:  now,
 		Components: allCompNames,
 	}
+	if !needForkApplication {
+		// Return env vars so the caller can set them before building the agent.
+		info.Env = envVars
+	}
 	if err := d.store.Register(info); err != nil {
-		d.killProcess(pid)
+		if needForkApplication {
+			d.killProcess(pid)
+		}
 		cleanup()
 		return nil, fmt.Errorf("register app: %w", err)
 	}
@@ -625,7 +642,7 @@ func (d *Daemon) RestartApp(name string) (*AppInfo, error) {
 		return nil, fmt.Errorf("stop for restart: %w", err)
 	}
 
-	return d.LoadApp(configPath)
+	return d.LoadApp(configPath, true)
 }
 
 // parsePortFromTarget extracts the port number from a target string like

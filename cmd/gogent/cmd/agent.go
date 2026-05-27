@@ -22,7 +22,7 @@ var agentCmd = &cobra.Command{
 	Short:  "Internal: forked by daemon to run an independent agent process",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return forkAgent(agentConfig, agentPort)
+		return forkAgent(agentConfig, agentPort, false)
 	},
 }
 
@@ -33,7 +33,7 @@ func init() {
 	agentCmd.MarkFlagRequired("port")
 }
 
-func forkAgent(configPath, listenPort string) error {
+func forkAgent(configPath, listenPort string, foreground bool) error {
 	// Normalize port: ensure ":" prefix for http.ListenAndServe
 	if listenPort != "" && !strings.HasPrefix(listenPort, ":") && !strings.Contains(listenPort, ":") {
 		listenPort = ":" + listenPort
@@ -44,9 +44,22 @@ func forkAgent(configPath, listenPort string) error {
 		return fmt.Errorf("create builder: %w", err)
 	}
 
-	application, err := builder.Build(app.WithMgmtPort(listenPort))
+	application, err := builder.Build(
+		app.WithMgmtPort(listenPort),
+	)
 	if err != nil {
 		return fmt.Errorf("build application: %w", err)
+	}
+
+	// Foreground: iface must be present (configured in config)
+	if foreground {
+		if application.Interface() == nil {
+			return fmt.Errorf("no CLI interface configured")
+		}
+	}
+	// Background: never run iface, even if config specifies one
+	if !foreground {
+		application.SetInterface(nil)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

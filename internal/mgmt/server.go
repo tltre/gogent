@@ -554,7 +554,11 @@ func (s *Server) handleLoadApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := s.daemon.LoadApp(req.ConfigPath)
+	needFork := true
+	if req.NeedForkApplication != nil {
+		needFork = *req.NeedForkApplication
+	}
+	info, err := s.daemon.LoadApp(req.ConfigPath, needFork)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)

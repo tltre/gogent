@@ -48,11 +48,13 @@ type AppInfo struct {
 	ConfigPath string   `json:"config_path"`
 	StartedAt  int64    `json:"started_at"`           // unix timestamp
 	Components []string `json:"components,omitempty"` // component names used by this app
+	Env        []string `json:"env,omitempty"`         // env vars for component targets
 }
 
 // LoadAppRequest is the request body for loading a new app into the daemon.
 type LoadAppRequest struct {
-	ConfigPath string `json:"config_path"`
+	ConfigPath           string `json:"config_path"`
+	NeedForkApplication  *bool  `json:"need_fork_application,omitempty"` // nil → true (default)
 }
 
 // AgentRunRequest is the request body for POST /api/v1/agent/run.

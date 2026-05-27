@@ -35,6 +35,10 @@ func (a *App) Interface() iface.Interface {
 	return a.iface
 }
 
+func (a *App) SetInterface(i iface.Interface) {
+	a.iface = i
+}
+
 func (a *App) Initialize(ctx context.Context) error {
 	return a.registry.InitializeAll(ctx)
 }

@@ -15,6 +15,11 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// registerStubs is set by an e2e-tagged init() in stub_hook.go.
+// When non-nil, the component subcommand registers component-specific
+// gRPC services (stub implementations) in addition to the health service.
+var registerStubs func(srv *grpc.Server, typ string)
+
 var (
 	componentName string
 	componentPort string
@@ -55,6 +60,13 @@ func runComponent(name, port, typ string) error {
 	hs := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, hs)
 	hs.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	// Register component-specific gRPC service.
+	// Built with -tags e2e: uses stub implementations from tests/e2e/helpers.
+	// Normal build: no-op (registerStubs is nil).
+	if registerStubs != nil {
+		registerStubs(srv, typ)
+	}
 
 	fmt.Fprintf(os.Stderr, "component %q (%s) serving gRPC on %s  pid=%d\n", name, typ, addr, os.Getpid())
 
