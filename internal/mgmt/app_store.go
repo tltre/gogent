@@ -85,6 +85,21 @@ func (s *AppStore) UpdateStatus(name string, status string) error {
 	return nil
 }
 
+// UpdatePID updates the PID field of a registered app. Returns an error if the
+// app is not found.
+func (s *AppStore) UpdatePID(name string, pid int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	info, exists := s.apps[name]
+	if !exists {
+		return fmt.Errorf("app %s not found", name)
+	}
+
+	info.PID = pid
+	return nil
+}
+
 // Count returns the number of registered apps.
 func (s *AppStore) Count() int {
 	s.mu.RLock()

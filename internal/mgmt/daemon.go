@@ -38,12 +38,12 @@ type Daemon struct {
 // a previous daemon crash and recovers them.
 func NewDaemon(basePort int) *Daemon {
 	d := &Daemon{
-		store:                  NewAppStore(),
-		compStore:              NewComponentStore(),
-		basePort:               basePort,
-		reservedPorts:          make(map[int]bool),
-		compRetryCount:         make(map[string]int),
-		compRetryFirstAttempt:  make(map[string]time.Time),
+		store:                 NewAppStore(),
+		compStore:             NewComponentStore(),
+		basePort:              basePort,
+		reservedPorts:         make(map[int]bool),
+		compRetryCount:        make(map[string]int),
+		compRetryFirstAttempt: make(map[string]time.Time),
 	}
 	d.RecoverApps()
 	return d
@@ -188,9 +188,9 @@ func (cc daemonComponentConfig) getEndpoint() string {
 
 // daemonAppConfig is a daemon-local struct for parsing the full app config.
 type daemonAppConfig struct {
-	Name       string                   `yaml:"name"`
-	Components []daemonComponentConfig  `yaml:"components,omitempty"`
-	Defaults   map[string]string        `yaml:"defaults,omitempty"`
+	Name       string                  `yaml:"name"`
+	Components []daemonComponentConfig `yaml:"components,omitempty"`
+	Defaults   map[string]string       `yaml:"defaults,omitempty"`
 }
 
 // parseComponentConfig parses the YAML data and extracts the component list
@@ -578,25 +578,39 @@ func (d *Daemon) StopApp(name string) error {
 		return fmt.Errorf("app %s not found", name)
 	}
 
-	// Kill the app process.
-	if err := d.killProcess(info.PID); err != nil {
-		return fmt.Errorf("kill process: %w", err)
+	// Read the real PID from the agent's port file.
+	// In-process agents (gogent run) are registered with PID=0
+	// but write the real PID via mgmt.Listen → WriteAppPortFile.
+	if pf, err := ReadAppPortFile(name); err == nil && pf.PID > 0 {
+		info.PID = pf.PID
 	}
 
-	// Wait up to 5s for the process to exit.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
+	// Kill the app process and wait for it to exit (best-effort).
+	// When PID is 0 (in-process agent already exited) or kill fails,
+	// fall through to component cleanup instead of blocking.
+	if info.PID > 0 {
+		if err := d.killProcess(info.PID); err != nil {
+			fmt.Fprintf(os.Stderr, "[daemon] warn: kill app %s (pid %d): %v — continuing cleanup\n",
+				name, info.PID, err)
+		} else {
+			// Wait up to 5s for the process to exit.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
 
-	exited := false
-	for !exited {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("process %d did not exit within 5s", info.PID)
-		case <-ticker.C:
-			if !d.isProcessAlive(info.PID) {
-				exited = true
+			exited := false
+			for !exited {
+				select {
+				case <-ctx.Done():
+					fmt.Fprintf(os.Stderr, "[daemon] warn: app %s (pid %d) did not exit within 5s\n",
+						name, info.PID)
+					exited = true
+				case <-ticker.C:
+					if !d.isProcessAlive(info.PID) {
+						exited = true
+					}
+				}
 			}
 		}
 	}
@@ -686,6 +700,15 @@ func (d *Daemon) StartHealthCheck(ctx context.Context, interval time.Duration) {
 func (d *Daemon) runHealthCheck() {
 	apps := d.store.List()
 	for _, info := range apps {
+		// Resolve real PID from port file when daemon only has PID=0
+		// (in-process agents register via LoadApp with needForkApplication=false).
+		if info.PID <= 0 {
+			if pf, err := ReadAppPortFile(info.Name); err == nil && pf.PID > 0 {
+				d.store.UpdatePID(info.Name, pf.PID)
+				info.PID = pf.PID
+			}
+		}
+
 		if !d.isProcessAlive(info.PID) {
 			// Process no longer alive – mark as stopped.
 			fmt.Fprintf(os.Stderr, "[daemon] app %s stopped (pid %d no longer alive)\n", info.Name, info.PID)
@@ -795,6 +818,7 @@ func (d *Daemon) StartComponentHealthCheck(ctx context.Context, interval time.Du
 //   - process: PID liveness + gRPC health ping; dead → auto-restart (max 3 retries)
 //   - http: gRPC health ping (no PID check); unreachable → mark "error"
 //   - native: status stays "running" (App healthy = component healthy)
+//
 // Components with status "error" are skipped (retries exhausted).
 func (d *Daemon) runComponentHealthCheck() {
 	comps := d.compStore.List()
