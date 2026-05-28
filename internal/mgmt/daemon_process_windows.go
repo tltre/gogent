@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // killProcess forcefully terminates a process by PID using taskkill.
@@ -31,4 +32,13 @@ func (d *Daemon) isProcessAlive(pid int) bool {
 		return false
 	}
 	return strings.Contains(string(out), strconv.Itoa(pid))
+}
+
+// detachDaemon configures the daemon process to run in a new process group
+// so that Ctrl+C sent to the parent console does not propagate to it.
+func detachDaemon(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= syscall.CREATE_NEW_PROCESS_GROUP
 }

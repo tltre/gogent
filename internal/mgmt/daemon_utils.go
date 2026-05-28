@@ -61,6 +61,7 @@ func startDaemonBackground(daemonPort string) error {
 	cmd := exec.Command(exePath, "daemon", "--port", rawPort)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	detachDaemon(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon process: %w", err)
