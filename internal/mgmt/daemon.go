@@ -710,13 +710,14 @@ func (d *Daemon) runHealthCheck() {
 		}
 
 		if !d.isProcessAlive(info.PID) {
-			// Process no longer alive – mark as stopped.
-			fmt.Fprintf(os.Stderr, "[daemon] app %s stopped (pid %d no longer alive)\n", info.Name, info.PID)
-			d.store.UpdateStatus(info.Name, "stopped")
-			RemoveAppPortFile(info.Name)
-
-			// Clean up all components belonging to this app.
-			d.cleanupAppComponents(info.Name)
+			// Process no longer alive – mark as stopped and clean up.
+			// Only act on first detection; subsequent cycles skip already-stopped apps.
+			if info.Status != "stopped" {
+				fmt.Fprintf(os.Stderr, "[daemon] app %s stopped (pid %d no longer alive)\n", info.Name, info.PID)
+				d.store.UpdateStatus(info.Name, "stopped")
+				RemoveAppPortFile(info.Name)
+				d.cleanupAppComponents(info.Name)
+			}
 		} else {
 			// Best-effort health endpoint check with short timeout.
 			d.tryHealthEndpoint(info.Port)
