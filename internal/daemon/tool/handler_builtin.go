@@ -2,45 +2,26 @@ package tool
 
 import "context"
 
-// RegisterBuiltinHandlers registers stub handlers for all 5 built-in tools.
-// v0.12.3: placeholders. v0.12.4: replace with real implementations.
+// RegisterBuiltinHandlers registers handlers for all 5 built-in tools.
+// calculator, think, todo are real implementations (v0.12.4).
+// filesystem.read and shell remain stubs pending sandbox routing (v0.12.8).
+//
+// See v0.12.x roadmap for built-in tool enhancement plans.
 func RegisterBuiltinHandlers(br *BuiltinRunner) {
-	br.RegisterHandler("calculator", stubCalculator)
-	br.RegisterHandler("think", stubThink)
-	br.RegisterHandler("todo", stubTodo)
+	calc := &calculator{}
+	br.RegisterHandler("calculator", calc.exec)
+	br.RegisterHandler("think", execThink)
+	br.RegisterHandler("todo", execTodo)
 	br.RegisterHandler("filesystem.read", stubFilesystemRead)
 	br.RegisterHandler("shell", stubShell)
 }
 
-func stubCalculator(_ context.Context, params map[string]any) (Result, error) {
-	expr, _ := params["expr"].(string)
-	return Result{
-		Output:  "calculator stub: evaluated \"" + expr + "\" = <v0.12.4>",
-		IsError: false,
-	}, nil
-}
-
-func stubThink(_ context.Context, params map[string]any) (Result, error) {
-	thought, _ := params["thought"].(string)
-	return Result{
-		Output:  "think stub: processed \"" + thought + "\" → <v0.12.4>",
-		IsError: false,
-	}, nil
-}
-
-func stubTodo(_ context.Context, params map[string]any) (Result, error) {
-	action, _ := params["action"].(string)
-	item, _ := params["item"].(string)
-	return Result{
-		Output:  "todo stub: " + action + " \"" + item + "\" → <v0.12.4>",
-		IsError: false,
-	}, nil
-}
+// --- stubs for v0.12.8 ---
 
 func stubFilesystemRead(_ context.Context, params map[string]any) (Result, error) {
 	path, _ := params["path"].(string)
 	return Result{
-		Output:  "filesystem.read stub: read \"" + path + "\" → <v0.12.4>",
+		Output:  "filesystem.read stub: read \"" + path + "\" → <v0.12.8>",
 		IsError: true,
 	}, nil
 }
@@ -48,7 +29,7 @@ func stubFilesystemRead(_ context.Context, params map[string]any) (Result, error
 func stubShell(_ context.Context, params map[string]any) (Result, error) {
 	cmd, _ := params["cmd"].(string)
 	return Result{
-		Output:  "shell stub: executed \"" + cmd + "\" → <v0.12.4>",
+		Output:  "shell stub: executed \"" + cmd + "\" → <v0.12.8>",
 		IsError: true,
 	}, nil
 }
