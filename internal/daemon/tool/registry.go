@@ -51,9 +51,19 @@ type ToolStats struct {
 	LastUsed    time.Time
 }
 
+// ToolSource identifies where a tool definition came from.
+type ToolSource string
+
+const (
+	SourceBuiltin ToolSource = "builtin" // loaded from DefaultBuiltinTools
+	SourceUser    ToolSource = "user"    // registered via CLI or gRPC
+	SourceFile    ToolSource = "file"    // loaded from ~/.gogent/tools.yaml
+)
+
 // toolEntry is the internal runtime representation of a registered tool.
 type toolEntry struct {
 	def     *ToolDefinition
+	source  ToolSource
 	status  ToolStatus
 	stats   ToolStats
 	created time.Time
@@ -74,8 +84,9 @@ func NewToolRegistry() *ToolRegistry {
 }
 
 // Register adds a tool definition. Returns error if name already exists or
-// validation fails.
-func (r *ToolRegistry) Register(def *ToolDefinition) error {
+// validation fails. The optional source parameter indicates where the tool
+// definition came from (defaults to SourceUser).
+func (r *ToolRegistry) Register(def *ToolDefinition, source ...ToolSource) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -85,12 +96,12 @@ func (r *ToolRegistry) Register(def *ToolDefinition) error {
 	if _, exists := r.entries[def.Name]; exists {
 		return fmt.Errorf("tool %q already registered", def.Name)
 	}
-	return r.insertLocked(def)
+	return r.insertLocked(def, source...)
 }
 
 // MustRegister is like Register but panics on error (for built-in tools).
 func (r *ToolRegistry) MustRegister(def *ToolDefinition) {
-	if err := r.Register(def); err != nil {
+	if err := r.Register(def, SourceBuiltin); err != nil {
 		panic(fmt.Sprintf("register builtin tool %q: %v", def.Name, err))
 	}
 }
@@ -107,9 +118,10 @@ func (r *ToolRegistry) registerOrUpdate(def *ToolDefinition) error {
 	if _, exists := r.entries[def.Name]; exists {
 		// Update in place — preserve status and stats
 		r.entries[def.Name].def = def
+		r.entries[def.Name].source = SourceFile
 		return nil
 	}
-	return r.insertLocked(def)
+	return r.insertLocked(def, SourceFile)
 }
 
 // Unregister removes a tool definition by name.
@@ -188,6 +200,17 @@ func (r *ToolRegistry) GetStatus(name string) ToolStatus {
 	return entry.status
 }
 
+// GetSource returns the source of a registered tool ("builtin" | "user" | "file").
+func (r *ToolRegistry) GetSource(name string) ToolSource {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry, exists := r.entries[name]
+	if !exists {
+		return ""
+	}
+	return entry.source
+}
+
 // GetStats returns runtime statistics for a tool.
 func (r *ToolRegistry) GetStats(name string) ToolStats {
 	r.mu.RLock()
@@ -237,9 +260,14 @@ func (r *ToolRegistry) validateLocked(def *ToolDefinition) error {
 	return nil
 }
 
-func (r *ToolRegistry) insertLocked(def *ToolDefinition) error {
+func (r *ToolRegistry) insertLocked(def *ToolDefinition, source ...ToolSource) error {
+	src := SourceUser
+	if len(source) > 0 {
+		src = source[0]
+	}
 	r.entries[def.Name] = &toolEntry{
 		def:     def,
+		source:  src,
 		status:  StatusRegistered,
 		created: time.Now(),
 	}

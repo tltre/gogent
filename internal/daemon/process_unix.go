@@ -24,9 +24,9 @@ func (d *Daemon) isProcessAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
 
-// detachDaemon configures the daemon process to run in a new process group
+// DetachDaemon configures the daemon process to run in a new process group
 // so that terminal signals (SIGINT, SIGTSTP) do not propagate to it.
-func detachDaemon(cmd *exec.Cmd) {
+func DetachDaemon(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}

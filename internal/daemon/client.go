@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon/tool"
 )
 
 // DaemonClient is an HTTP client for communicating with the daemon process's
@@ -94,6 +95,36 @@ func (c *DaemonClient) Info() (*api.InfoResponse, error) {
 	return &info, err
 }
 
+// ToolsList returns all registered tool definitions.
+func (c *DaemonClient) ToolsList() ([]tool.ToolDefinition, error) {
+	var list []tool.ToolDefinition
+	err := c.get(api.PathDaemonTools, &list)
+	return list, err
+}
+
+// ToolsStatus returns status details for a single tool.
+func (c *DaemonClient) ToolsStatus(name string) (map[string]any, error) {
+	var result map[string]any
+	err := c.get(api.PathDaemonToolsPath+name, &result)
+	return result, err
+}
+
+// ToolRegister registers a new tool definition with the daemon.
+func (c *DaemonClient) ToolRegister(req *api.RegisterToolRequest) error {
+	body, _ := json.Marshal(req)
+	return c.post(api.PathDaemonTools, body, nil)
+}
+
+// ToolUnregister removes a tool definition. If force is true, skips the
+// safety check for apps currently using the tool.
+func (c *DaemonClient) ToolUnregister(name string, force bool) error {
+	path := api.PathDaemonToolsPath + name
+	if force {
+		path += "?force=true"
+	}
+	return c.delete(path)
+}
+
 // Ping performs a lightweight health check.
 func (c *DaemonClient) Ping() error {
 	_, err := c.Info()
@@ -112,11 +143,14 @@ func (c *DaemonClient) get(path string, result any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		if len(body) > 0 {
-			return fmt.Errorf("daemon mgmt request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		respBody, _ := io.ReadAll(resp.Body)
+		if len(respBody) > 0 {
+			return fmt.Errorf("daemon mgmt request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 		}
 		return fmt.Errorf("daemon mgmt request failed: %d", resp.StatusCode)
+	}
+	if result == nil {
+		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
 }
@@ -136,6 +170,9 @@ func (c *DaemonClient) post(path string, body []byte, result any) error {
 		return fmt.Errorf("daemon mgmt request failed: %d", resp.StatusCode)
 	}
 
+	if result == nil {
+		return nil
+	}
 	return json.NewDecoder(resp.Body).Decode(result)
 }
 
@@ -150,6 +187,10 @@ func (c *DaemonClient) delete(path string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) > 0 {
+			return fmt.Errorf("daemon mgmt request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("daemon mgmt request failed: %d", resp.StatusCode)
 	}
 	return nil

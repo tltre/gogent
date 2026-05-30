@@ -23,10 +23,10 @@ type Handler struct {
 // NewHandler creates a ToolService gRPC handler backed by the given registry.
 // It initializes default runners for builtin/process/http and registers stub
 // handlers for the 5 built-in tools.
-func NewHandler(registry *ToolRegistry) *Handler {
+func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore) *Handler {
 	h := &Handler{
 		registry:      registry,
-		manifestStore: NewManifestStore(),
+		manifestStore: manifestStore,
 		runners:       make(map[string]Runner),
 	}
 

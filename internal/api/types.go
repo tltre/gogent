@@ -102,3 +102,14 @@ func StatusToString(s component.ComponentStatus) string {
 		return "unknown"
 	}
 }
+
+// RegisterToolRequest is the JSON body for POST /api/v1/daemon/tools.
+type RegisterToolRequest struct {
+	Name         string            `json:"name"`
+	Driver       string            `json:"driver"`
+	Command      string            `json:"command,omitempty"`
+	Endpoint     string            `json:"endpoint,omitempty"`
+	DefaultLevel int               `json:"defaultLevel"`
+	Description  string            `json:"description,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+}

@@ -60,10 +60,10 @@ func startDaemonBackground(daemonPort string) error {
 	// PersistentPreRunE can normalize it again.
 	rawPort := strings.TrimPrefix(daemonPort, ":")
 
-	cmd := exec.Command(exePath, "daemon", "--port", rawPort)
+	cmd := exec.Command(exePath, "daemon", "--foreground", "--port", rawPort)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	detachDaemon(cmd)
+	DetachDaemon(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon process: %w", err)

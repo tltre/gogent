@@ -34,9 +34,9 @@ func (d *Daemon) isProcessAlive(pid int) bool {
 	return strings.Contains(string(out), strconv.Itoa(pid))
 }
 
-// detachDaemon configures the daemon process to run in a new process group
+// DetachDaemon configures the daemon process to run in a new process group
 // so that Ctrl+C sent to the parent console does not propagate to it.
-func detachDaemon(cmd *exec.Cmd) {
+func DetachDaemon(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}

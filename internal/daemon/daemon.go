@@ -32,9 +32,10 @@ type Daemon struct {
 	compRetryMu           sync.Mutex           // protects retry maps
 
 	// v0.12.1: Centralized tool management.
-	toolReg   *tool.ToolRegistry // registered tool definitions
-	grpcSrv   *GrpcServer        // gRPC ToolService server
-	grpcReady bool               // true after StartGrpc() completes
+	toolReg       *tool.ToolRegistry   // registered tool definitions
+	manifestStore *tool.ManifestStore // per-app manifest registrations
+	grpcSrv       *GrpcServer          // gRPC ToolService server
+	grpcReady     bool                 // true after StartGrpc() completes
 }
 
 // NewDaemon creates a new Daemon with an empty AppStore and the given base
@@ -56,6 +57,7 @@ func NewDaemon(basePort int) *Daemon {
 		compRetryCount:        make(map[string]int),
 		compRetryFirstAttempt: make(map[string]time.Time),
 		toolReg:               toolReg,
+		manifestStore:         tool.NewManifestStore(),
 	}
 	d.RecoverApps()
 	return d
@@ -128,11 +130,16 @@ func (d *Daemon) ToolRegistry() *tool.ToolRegistry {
 	return d.toolReg
 }
 
+// ManifestStore returns the daemon's manifest store (v0.12.2).
+func (d *Daemon) ManifestStore() *tool.ManifestStore {
+	return d.manifestStore
+}
+
 // StartGrpc initializes and starts the gRPC server for ToolService.
 // The gRPC port is basePort+1. This is called explicitly from runDaemon
 // after other subsystems are ready.
 func (d *Daemon) StartGrpc() {
-	d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg)
+		d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore)
 	if d.grpcSrv != nil {
 		d.grpcSrv.Start()
 		d.grpcReady = true

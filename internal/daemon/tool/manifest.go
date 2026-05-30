@@ -27,6 +27,22 @@ func (s *ManifestStore) Register(appName string, tools []*gogentv1.ManifestEntry
 	s.manifests[appName] = tools
 }
 
+// AppsUsingTool returns all app names whose manifest includes the given tool.
+func (s *ManifestStore) AppsUsingTool(toolName string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var apps []string
+	for appName, entries := range s.manifests {
+		for _, e := range entries {
+			if e.Name == toolName {
+				apps = append(apps, appName)
+				break
+			}
+		}
+	}
+	return apps
+}
+
 // Unregister removes a manifest (called when app stops).
 func (s *ManifestStore) Unregister(appName string) {
 	s.mu.Lock()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"time"
@@ -12,7 +13,10 @@ import (
 	"github.com/tltre/gogent/internal/daemon"
 )
 
-var basePort string
+var (
+	basePort      string
+	foregroundMode bool
+)
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
@@ -22,7 +26,8 @@ of agent instances, allocates ports, and provides a REST API for
 CLI management commands (serve, stop, list, status, doctor, logs).
 
 The daemon listens on localhost only (loopback). Use --port to
-set the daemon's own listen port.`,
+set the daemon's own listen port. By default the daemon forks to
+background; use --foreground to keep it in the current process.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDaemon()
 	},
@@ -30,36 +35,49 @@ set the daemon's own listen port.`,
 
 func init() {
 	daemonCmd.Flags().StringVar(&basePort, "base-port", "9090", "base port for agent port allocation (default 9090)")
+	daemonCmd.Flags().BoolVarP(&foregroundMode, "foreground", "F", false, "run in foreground (don't daemonize)")
 }
 
 func runDaemon() error {
-	// Parse base port
+	// Default: daemonize to background. Fork a child process that runs
+	// with --foreground so it knows not to fork again.
+	if !foregroundMode {
+		exePath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("get executable path: %w", err)
+		}
+		cmd := exec.Command(exePath, "daemon", "--foreground", "--port", port, "--base-port", basePort)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		daemon.DetachDaemon(cmd)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("start background daemon: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "daemon started in background (pid=%d)\n", cmd.Process.Pid)
+		return nil
+	}
+
+	// Foreground mode: this is the actual daemon process.
 	bp, err := strconv.Atoi(basePort)
 	if err != nil {
 		return fmt.Errorf("invalid --base-port value %q: %w", basePort, err)
 	}
 
-	// Create daemon
 	d := daemon.NewDaemon(bp)
 
-	// Start health check to detect crashed apps (checks every 5s)
 	healthCtx, healthCancel := context.WithCancel(context.Background())
 	defer healthCancel()
 	d.StartHealthCheck(healthCtx, 5*time.Second)
 
-	// Start component health check (separate goroutine, checks every 15s)
 	compHealthCtx, compHealthCancel := context.WithCancel(context.Background())
 	defer compHealthCancel()
 	d.StartComponentHealthCheck(compHealthCtx, 15*time.Second)
 
-	// Start gRPC ToolService server (v0.12.1)
 	d.StartGrpc()
 
-	// Start HTTP server (reg is nil since daemon is not a Component)
 	srv := daemon.NewDaemonServer(port, d)
 	defer srv.Shutdown(context.Background())
 
-	// Write daemon port file
 	if err := daemon.WriteDaemonPortFile(port); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not write daemon port file: %v\n", err)
 	}
@@ -67,14 +85,11 @@ func runDaemon() error {
 
 	fmt.Fprintf(os.Stderr, "daemon listening on %s  pid=%d\n", port, os.Getpid())
 
-	// Block on interrupt signal (os.Interrupt for cross-platform: SIGINT on Unix, CTRL events on Windows)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
-
 	<-sigChan
 	fmt.Fprintln(os.Stderr, "\nShutting down daemon...")
 
-	// Graceful shutdown: stop all managed apps and clean up port files.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := d.Shutdown(shutdownCtx); err != nil {

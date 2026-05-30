@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/pkg/component"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -74,18 +75,55 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// handleTools returns all registered tool definitions.
+// handleTools returns all registered tool definitions (GET) or registers a new one (POST).
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		tools := s.daemon.ToolRegistry().List()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tools)
+
+	case http.MethodPost:
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		var req api.RegisterToolRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+
+		def := &tool.ToolDefinition{
+			Name:        req.Name,
+			Driver:      req.Driver,
+			Command:     req.Command,
+			Endpoint:    req.Endpoint,
+			DefaultLvl:  req.DefaultLevel,
+			Description: req.Description,
+			Env:         req.Env,
+		}
+		if err := s.daemon.ToolRegistry().Register(def); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	tools := s.daemon.ToolRegistry().List()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tools)
 }
 
-// handleToolsPath returns status for a single tool, or method-not-allowed.
+// handleToolsPath returns status for a single tool (GET) or deletes it (DELETE).
 func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, api.PathDaemonToolsPath)
 	if name == "" || strings.Contains(name, "/") {
@@ -108,12 +146,30 @@ func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 			"driver":       def.Driver,
 			"description":  def.Description,
 			"defaultLevel": def.DefaultLvl,
+			"source":       s.daemon.ToolRegistry().GetSource(name),
 			"status":       string(status),
 			"invocations":  stats.Invocations,
 			"failures":     stats.Failures,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+
+	case http.MethodDelete:
+		// Safety check: refuse if apps are using this tool (unless force=true)
+		if r.URL.Query().Get("force") != "true" {
+			apps := s.daemon.ManifestStore().AppsUsingTool(name)
+			if len(apps) > 0 {
+				errMsg := fmt.Sprintf("tool %q is in use by apps: %v (use --force to override)", name, apps)
+				http.Error(w, errMsg, http.StatusConflict)
+				return
+			}
+		}
+		if err := s.daemon.ToolRegistry().Unregister(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "unregistered"})
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
