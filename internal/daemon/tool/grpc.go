@@ -12,12 +12,16 @@ import (
 // Handler implements gogentv1.ToolServiceServer.
 type Handler struct {
 	gogentv1.UnimplementedToolServiceServer
-	registry *ToolRegistry
+	registry      *ToolRegistry
+	manifestStore *ManifestStore
 }
 
 // NewHandler creates a ToolService gRPC handler backed by the given registry.
 func NewHandler(registry *ToolRegistry) *Handler {
-	return &Handler{registry: registry}
+	return &Handler{
+		registry:      registry,
+		manifestStore: NewManifestStore(),
+	}
 }
 
 // RegisterTool registers a new tool definition.
@@ -134,7 +138,49 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 	return nil
 }
 
-// RegisterManifest is a stub for v0.12.3.
+// RegisterManifest validates and stores an app's tool manifest.
+// Each tool is checked against the registry: tool must exist and securityLevel
+// is auto-clamped to defaultLevel if below it. Rejected tools don't block
+// accepted ones — the app operates with a partial toolset.
 func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRequest) (*gogentv1.ManifestResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "RegisterManifest not implemented in v0.12.1")
+	if req.AppName == "" {
+		return &gogentv1.ManifestResponse{
+			Accepted:     false,
+			ErrorMessage: "app_name is required",
+		}, nil
+	}
+
+	var statuses []*gogentv1.ManifestStatus
+	allAccepted := true
+
+	for _, entry := range req.Tools {
+		def, exists := h.registry.Get(entry.Name)
+		if !exists {
+			allAccepted = false
+			statuses = append(statuses, &gogentv1.ManifestStatus{
+				Name:     entry.Name,
+				Accepted: false,
+				Reason:   "tool not found in registry",
+			})
+			continue
+		}
+
+		effectiveLevel := int(entry.SecurityLevel)
+		if effectiveLevel < def.DefaultLvl {
+			effectiveLevel = def.DefaultLvl
+		}
+
+		statuses = append(statuses, &gogentv1.ManifestStatus{
+			Name:           entry.Name,
+			Accepted:       true,
+			EffectiveLevel: int32(effectiveLevel),
+		})
+	}
+
+	h.manifestStore.Register(req.AppName, req.Tools)
+
+	return &gogentv1.ManifestResponse{
+		Accepted: allAccepted,
+		Tools:    statuses,
+	}, nil
 }

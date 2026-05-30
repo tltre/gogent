@@ -16,6 +16,11 @@ func ParseConfig(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+type ToolManifestEntry struct {
+	Name          string `yaml:"name"`
+	SecurityLevel int    `yaml:"securityLevel,omitempty"`
+}
+
 type Config struct {
 	Name          string              `yaml:"name"`
 	Version       string              `yaml:"version"`
@@ -23,6 +28,7 @@ type Config struct {
 	Components    []ComponentConfig   `yaml:"components,omitempty"`
 	Defaults      map[string]string   `yaml:"defaults,omitempty"`
 	Observability ObservabilityConfig `yaml:"observability,omitempty"`
+	Tools         []ToolManifestEntry `yaml:"tools,omitempty"`
 }
 
 type ObservabilityConfig struct {

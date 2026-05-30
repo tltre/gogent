@@ -9,6 +9,7 @@ import (
 	"github.com/tltre/gogent/internal/mgmt"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/iface"
+	"github.com/tltre/gogent/pkg/tool"
 )
 
 type otelShutdownFn func(context.Context) error
@@ -19,6 +20,17 @@ type App struct {
 	iface        iface.Interface
 	mgmtPort     string
 	otelShutdown otelShutdownFn
+	toolManager  *tool.ToolManager // v0.12.2
+}
+
+// ToolManager returns the app's ToolManager instance.
+func (a *App) ToolManager() *tool.ToolManager {
+	return a.toolManager
+}
+
+// SetToolManager sets the ToolManager instance (used by Builder).
+func (a *App) SetToolManager(tm *tool.ToolManager) {
+	a.toolManager = tm
 }
 
 func (a *App) Name() string {
@@ -102,10 +114,22 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Start ToolManager (v0.12.2) — non-blocking on failure.
+	if a.toolManager != nil {
+		if err := a.toolManager.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "[app] warn: tool manager start: %v\n", err)
+		}
+	}
+	defer func() {
+		if a.toolManager != nil {
+			a.toolManager.Stop(ctx)
+		}
+	}()
+
 	// Start management HTTP server (non-blocking goroutine).
 	var srv *mgmt.Server
 	if a.mgmtPort != "" {
-		srv = mgmt.Listen(a.mgmtPort, a.registry)
+		srv = mgmt.Listen(a.mgmtPort, a.registry, a.toolManager)
 		defer srv.Shutdown(context.Background())
 
 		if err := daemon.WriteAppPortFile(a.Name(), a.mgmtPort); err != nil {

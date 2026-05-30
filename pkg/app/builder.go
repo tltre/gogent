@@ -92,10 +92,24 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 
 	b.registerDefaults()
 
+	// Create ToolManager and inject tool declarations (v0.12.2).
+	tm := tool.NewToolManager(b.config.Name)
+	if len(b.config.Tools) > 0 {
+		entries := make([]tool.ManifestEntry, len(b.config.Tools))
+		for i, t := range b.config.Tools {
+			entries[i] = tool.ManifestEntry{
+				Name:  t.Name,
+				Level: t.SecurityLevel,
+			}
+		}
+		tm.SetManifest(b.config.Name, entries)
+	}
+
 	app := &App{
-		config:   b.config,
-		registry: b.registry,
-		mgmtPort: b.mgmtPort,
+		config:      b.config,
+		registry:    b.registry,
+		mgmtPort:    b.mgmtPort,
+		toolManager: tm,
 	}
 
 	if b.config.Observability.OTel.Enabled {
@@ -123,8 +137,7 @@ func (b *Builder) buildComponent(cc ComponentConfig) (component.Component, error
 		return b.buildAgentCore(cc)
 	case component.ComponentProvider:
 		return b.buildProvider(cc)
-	case component.ComponentTool:
-		return b.buildTool(cc)
+	// ComponentTool removed in v0.12.2 — tools managed by daemon ToolRegistry
 	case component.ComponentHook:
 		return b.buildHook(cc)
 	case component.ComponentEventBus:
@@ -184,32 +197,7 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 	}
 }
 
-func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
-	comp := tool.NewComponent(cc.Name)
-
-	// v0.11-style tool config via components[].type: tool is deprecated in v0.12.
-	// HTTP/process driver tools are now managed by the daemon's ToolRegistry.
-	// Only native driver tools are registered directly here.
-	if tools, ok := cc.Config["tools"]; ok {
-		if toolList, ok := tools.([]any); ok {
-			for _, t := range toolList {
-				if toolMap, ok := t.(map[string]any); ok {
-					name := getString(toolMap, "name")
-					desc := getString(toolMap, "description")
-					driver := getString(toolMap, "driver")
-					if driver == "" || driver == string(component.DriverNative) {
-						// Native tools: register directly if they implement ITool.
-						// In v0.12, this path is replaced by daemon-side tool definitions.
-						_ = name
-						_ = desc
-					}
-				}
-			}
-		}
-	}
-
-	return comp, nil
-}
+// buildTool removed in v0.12.2 — tools managed by daemon ToolRegistry.
 
 func (b *Builder) buildHook(cc ComponentConfig) (component.Component, error) {
 	comp := hook.NewComponent(cc.Name)
@@ -443,9 +431,17 @@ func WithHooks(hooks ...hook.IHook) BuildOption {
 	return nil
 }
 
-func WithTools(tools ...tool.ITool) BuildOption {
-	// TODO
-	return nil
+// WithTool declares a tool the application needs. The tool name must match
+// a definition in the daemon's ~/.gogent/tools.yaml. level is the desired
+// security level (0-2).
+func WithTool(name string, level int) BuildOption {
+	return func(b *Builder) error {
+		b.config.Tools = append(b.config.Tools, ToolManifestEntry{
+			Name:          name,
+			SecurityLevel: level,
+		})
+		return nil
+	}
 }
 
 func WithChannels(channels ...channel.IChannel) BuildOption {

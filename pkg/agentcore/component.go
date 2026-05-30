@@ -51,10 +51,7 @@ func (c *AgentRuntime) Dependencies() map[string]component.DependencySpec {
 			Type:     component.ComponentProvider,
 			Required: true,
 		},
-		"toolManager": {
-			Type:     component.ComponentTool,
-			Required: false,
-		},
+		// toolManager removed in v0.12.2 — no longer a registry component
 		"HookManager": {
 			Type:     component.ComponentHook,
 			Required: false,

@@ -23,17 +23,19 @@ import (
 // It serves app-level endpoints (registry, health, logs, etc.) on
 // the agent's own mgmt port.
 type Server struct {
-	http    *http.Server
-	reg     *component.Registry
-	started time.Time
+	http        *http.Server
+	reg         *component.Registry
+	tm          *tool.ToolManager
+	started     time.Time
 }
 
 // Listen creates an agent-level management HTTP server. It registers handlers
 // for app-level endpoints (registry, health, logs, etc.) and starts the server
 // in a background goroutine.
-func Listen(addr string, reg *component.Registry) *Server {
+func Listen(addr string, reg *component.Registry, tm *tool.ToolManager) *Server {
 	s := &Server{
 		reg:     reg,
+		tm:      tm,
 		started: time.Now(),
 	}
 
@@ -75,7 +77,7 @@ func (s *Server) handleRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 	types := []component.ComponentType{
 		component.ComponentChannel, component.ComponentAgentCore,
-		component.ComponentProvider, component.ComponentTool,
+		component.ComponentProvider,
 		component.ComponentHook, component.ComponentEventBus,
 		component.ComponentContextManager, component.ComponentMemory,
 		component.ComponentSandbox, component.ComponentLogger,
@@ -104,7 +106,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	types := []component.ComponentType{
 		component.ComponentChannel, component.ComponentAgentCore,
-		component.ComponentProvider, component.ComponentTool,
+		component.ComponentProvider,
 		component.ComponentHook, component.ComponentEventBus,
 		component.ComponentContextManager, component.ComponentMemory,
 		component.ComponentSandbox, component.ComponentLogger,
@@ -223,19 +225,13 @@ func (s *Server) handleToolsExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmComp := s.reg.GetDefault(component.ComponentTool)
-	if tmComp == nil {
+	if s.tm == nil {
 		http.Error(w, "no tool manager registered", http.StatusServiceUnavailable)
-		return
-	}
-	tm, ok := tmComp.(*tool.ToolManager)
-	if !ok {
-		http.Error(w, "default tool component is not a ToolManager", http.StatusInternalServerError)
 		return
 	}
 
 	start := time.Now()
-	result, execErr := tm.Execute(r.Context(), req.Tool, req.Params)
+	result, execErr := s.tm.Execute(r.Context(), req.Tool, req.Params)
 	elapsed := time.Since(start)
 
 	resp := map[string]any{

@@ -8,7 +8,7 @@ const (
 	ComponentChannel        ComponentType = "channel"
 	ComponentAgentCore      ComponentType = "agentcore"
 	ComponentProvider       ComponentType = "provider"
-	ComponentTool           ComponentType = "tool"
+	// ComponentTool removed in v0.12.2 — tools are managed by daemon ToolRegistry
 	ComponentHook           ComponentType = "hook"
 	ComponentEventBus       ComponentType = "eventbus"
 	ComponentContextManager ComponentType = "contextmanager"
