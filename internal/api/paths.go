@@ -25,7 +25,7 @@ const (
 	PathDaemonAppsPath         = "/api/v1/daemon/apps/" // + {name}
 	PathDaemonComponentsHealth = "/api/v1/daemon/components/health"
 	PathDaemonInfo             = "/api/v1/daemon/info"
-	// Future (v0.12.x):
-	// PathDaemonTools       = "/api/v1/daemon/tools"
-	// PathDaemonToolsPath   = "/api/v1/daemon/tools/"
+	// v0.12.1: Tool management endpoints (for CLI inspection)
+	PathDaemonTools     = "/api/v1/daemon/tools"
+	PathDaemonToolsPath = "/api/v1/daemon/tools/"
 )

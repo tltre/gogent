@@ -144,27 +144,33 @@ func (x *ToolResult) GetErrorMsg() string {
 	return ""
 }
 
-// ListToolsRequest is the input to ToolService.ListTools.
-type ListToolsRequest struct {
+type RegisterToolRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Driver        string                 `protobuf:"bytes,2,opt,name=driver,proto3" json:"driver,omitempty"` // "builtin" | "process" | "http"
+	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	Endpoint      string                 `protobuf:"bytes,4,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	DefaultLevel  int32                  `protobuf:"varint,5,opt,name=default_level,json=defaultLevel,proto3" json:"default_level,omitempty"`
+	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Env           map[string]string      `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListToolsRequest) Reset() {
-	*x = ListToolsRequest{}
+func (x *RegisterToolRequest) Reset() {
+	*x = RegisterToolRequest{}
 	mi := &file_tool_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListToolsRequest) String() string {
+func (x *RegisterToolRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListToolsRequest) ProtoMessage() {}
+func (*RegisterToolRequest) ProtoMessage() {}
 
-func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
+func (x *RegisterToolRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_tool_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -176,131 +182,178 @@ func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListToolsRequest.ProtoReflect.Descriptor instead.
-func (*ListToolsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use RegisterToolRequest.ProtoReflect.Descriptor instead.
+func (*RegisterToolRequest) Descriptor() ([]byte, []int) {
 	return file_tool_proto_rawDescGZIP(), []int{2}
 }
 
-// ListToolsResponse is the output from ToolService.ListTools.
-type ListToolsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tools         []*ToolInfo            `protobuf:"bytes,1,rep,name=tools,proto3" json:"tools,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListToolsResponse) Reset() {
-	*x = ListToolsResponse{}
-	mi := &file_tool_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListToolsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListToolsResponse) ProtoMessage() {}
-
-func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tool_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListToolsResponse.ProtoReflect.Descriptor instead.
-func (*ListToolsResponse) Descriptor() ([]byte, []int) {
-	return file_tool_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *ListToolsResponse) GetTools() []*ToolInfo {
-	if x != nil {
-		return x.Tools
-	}
-	return nil
-}
-
-// ExecuteToolRequest is the input to ToolService.ExecuteTool.
-type ExecuteToolRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Params        *structpb.Struct       `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ExecuteToolRequest) Reset() {
-	*x = ExecuteToolRequest{}
-	mi := &file_tool_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ExecuteToolRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ExecuteToolRequest) ProtoMessage() {}
-
-func (x *ExecuteToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tool_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ExecuteToolRequest.ProtoReflect.Descriptor instead.
-func (*ExecuteToolRequest) Descriptor() ([]byte, []int) {
-	return file_tool_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ExecuteToolRequest) GetName() string {
+func (x *RegisterToolRequest) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *ExecuteToolRequest) GetParams() *structpb.Struct {
+func (x *RegisterToolRequest) GetDriver() string {
 	if x != nil {
-		return x.Params
+		return x.Driver
+	}
+	return ""
+}
+
+func (x *RegisterToolRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *RegisterToolRequest) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *RegisterToolRequest) GetDefaultLevel() int32 {
+	if x != nil {
+		return x.DefaultLevel
+	}
+	return 0
+}
+
+func (x *RegisterToolRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *RegisterToolRequest) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
 	}
 	return nil
 }
 
-// ExecuteToolResponse is the output from ToolService.ExecuteTool.
-type ExecuteToolResponse struct {
+type RegisterToolResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Result        *ToolResult            `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ExecuteToolResponse) Reset() {
-	*x = ExecuteToolResponse{}
+func (x *RegisterToolResponse) Reset() {
+	*x = RegisterToolResponse{}
+	mi := &file_tool_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterToolResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterToolResponse) ProtoMessage() {}
+
+func (x *RegisterToolResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterToolResponse.ProtoReflect.Descriptor instead.
+func (*RegisterToolResponse) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RegisterToolResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *RegisterToolResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type UnregisterToolRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnregisterToolRequest) Reset() {
+	*x = UnregisterToolRequest{}
+	mi := &file_tool_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnregisterToolRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnregisterToolRequest) ProtoMessage() {}
+
+func (x *UnregisterToolRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnregisterToolRequest.ProtoReflect.Descriptor instead.
+func (*UnregisterToolRequest) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UnregisterToolRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type UnregisterToolResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnregisterToolResponse) Reset() {
+	*x = UnregisterToolResponse{}
 	mi := &file_tool_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ExecuteToolResponse) String() string {
+func (x *UnregisterToolResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ExecuteToolResponse) ProtoMessage() {}
+func (*UnregisterToolResponse) ProtoMessage() {}
 
-func (x *ExecuteToolResponse) ProtoReflect() protoreflect.Message {
+func (x *UnregisterToolResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_tool_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -312,16 +365,1017 @@ func (x *ExecuteToolResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ExecuteToolResponse.ProtoReflect.Descriptor instead.
-func (*ExecuteToolResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use UnregisterToolResponse.ProtoReflect.Descriptor instead.
+func (*UnregisterToolResponse) Descriptor() ([]byte, []int) {
 	return file_tool_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ExecuteToolResponse) GetResult() *ToolResult {
+func (x *UnregisterToolResponse) GetSuccess() bool {
 	if x != nil {
-		return x.Result
+		return x.Success
+	}
+	return false
+}
+
+func (x *UnregisterToolResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type GetToolStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetToolStatusRequest) Reset() {
+	*x = GetToolStatusRequest{}
+	mi := &file_tool_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetToolStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetToolStatusRequest) ProtoMessage() {}
+
+func (x *GetToolStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetToolStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetToolStatusRequest) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetToolStatusRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type GetToolStatusResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Exists          bool                   `protobuf:"varint,1,opt,name=exists,proto3" json:"exists,omitempty"`
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Driver          string                 `protobuf:"bytes,3,opt,name=driver,proto3" json:"driver,omitempty"`
+	Status          string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"` // "registered" | "active" | "unhealthy" | "stopped"
+	Description     string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	DefaultLevel    int32                  `protobuf:"varint,6,opt,name=default_level,json=defaultLevel,proto3" json:"default_level,omitempty"`
+	UptimeSeconds   int64                  `protobuf:"varint,7,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	InvocationCount int64                  `protobuf:"varint,8,opt,name=invocation_count,json=invocationCount,proto3" json:"invocation_count,omitempty"`
+	FailureCount    int64                  `protobuf:"varint,9,opt,name=failure_count,json=failureCount,proto3" json:"failure_count,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetToolStatusResponse) Reset() {
+	*x = GetToolStatusResponse{}
+	mi := &file_tool_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetToolStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetToolStatusResponse) ProtoMessage() {}
+
+func (x *GetToolStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetToolStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetToolStatusResponse) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetToolStatusResponse) GetExists() bool {
+	if x != nil {
+		return x.Exists
+	}
+	return false
+}
+
+func (x *GetToolStatusResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetToolStatusResponse) GetDriver() string {
+	if x != nil {
+		return x.Driver
+	}
+	return ""
+}
+
+func (x *GetToolStatusResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *GetToolStatusResponse) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *GetToolStatusResponse) GetDefaultLevel() int32 {
+	if x != nil {
+		return x.DefaultLevel
+	}
+	return 0
+}
+
+func (x *GetToolStatusResponse) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
+	}
+	return 0
+}
+
+func (x *GetToolStatusResponse) GetInvocationCount() int64 {
+	if x != nil {
+		return x.InvocationCount
+	}
+	return 0
+}
+
+func (x *GetToolStatusResponse) GetFailureCount() int64 {
+	if x != nil {
+		return x.FailureCount
+	}
+	return 0
+}
+
+// ToolControl is the App→Daemon message in the bidirectional ExecuteTool stream.
+type ToolControl struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*ToolControl_Request
+	//	*ToolControl_Verdict
+	//	*ToolControl_SandboxResult
+	Msg           isToolControl_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolControl) Reset() {
+	*x = ToolControl{}
+	mi := &file_tool_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolControl) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolControl) ProtoMessage() {}
+
+func (x *ToolControl) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolControl.ProtoReflect.Descriptor instead.
+func (*ToolControl) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ToolControl) GetMsg() isToolControl_Msg {
+	if x != nil {
+		return x.Msg
 	}
 	return nil
+}
+
+func (x *ToolControl) GetRequest() *ToolExecuteRequest {
+	if x != nil {
+		if x, ok := x.Msg.(*ToolControl_Request); ok {
+			return x.Request
+		}
+	}
+	return nil
+}
+
+func (x *ToolControl) GetVerdict() *HookVerdict {
+	if x != nil {
+		if x, ok := x.Msg.(*ToolControl_Verdict); ok {
+			return x.Verdict
+		}
+	}
+	return nil
+}
+
+func (x *ToolControl) GetSandboxResult() *SandboxResult {
+	if x != nil {
+		if x, ok := x.Msg.(*ToolControl_SandboxResult); ok {
+			return x.SandboxResult
+		}
+	}
+	return nil
+}
+
+type isToolControl_Msg interface {
+	isToolControl_Msg()
+}
+
+type ToolControl_Request struct {
+	Request *ToolExecuteRequest `protobuf:"bytes,1,opt,name=request,proto3,oneof"`
+}
+
+type ToolControl_Verdict struct {
+	Verdict *HookVerdict `protobuf:"bytes,2,opt,name=verdict,proto3,oneof"`
+}
+
+type ToolControl_SandboxResult struct {
+	SandboxResult *SandboxResult `protobuf:"bytes,3,opt,name=sandbox_result,json=sandboxResult,proto3,oneof"`
+}
+
+func (*ToolControl_Request) isToolControl_Msg() {}
+
+func (*ToolControl_Verdict) isToolControl_Msg() {}
+
+func (*ToolControl_SandboxResult) isToolControl_Msg() {}
+
+// ToolExecuteRequest initiates a tool execution. This is always the first
+// message in the bidirectional stream. Named ToolExecuteRequest (not
+// ExecuteRequest) to avoid collision with sandbox.proto's ExecuteRequest
+// in the same gogent.v1 package.
+type ToolExecuteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ToolName      string                 `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	Params        *structpb.Struct       `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolExecuteRequest) Reset() {
+	*x = ToolExecuteRequest{}
+	mi := &file_tool_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolExecuteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolExecuteRequest) ProtoMessage() {}
+
+func (x *ToolExecuteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolExecuteRequest.ProtoReflect.Descriptor instead.
+func (*ToolExecuteRequest) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ToolExecuteRequest) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
+}
+
+func (x *ToolExecuteRequest) GetParams() *structpb.Struct {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+type HookVerdict struct {
+	state          protoimpl.MessageState     `protogen:"open.v1"`
+	HookId         string                     `protobuf:"bytes,1,opt,name=hook_id,json=hookId,proto3" json:"hook_id,omitempty"`
+	Approved       bool                       `protobuf:"varint,2,opt,name=approved,proto3" json:"approved,omitempty"`
+	Reason         string                     `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	ModifiedParams map[string]*structpb.Value `protobuf:"bytes,4,rep,name=modified_params,json=modifiedParams,proto3" json:"modified_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *HookVerdict) Reset() {
+	*x = HookVerdict{}
+	mi := &file_tool_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HookVerdict) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HookVerdict) ProtoMessage() {}
+
+func (x *HookVerdict) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HookVerdict.ProtoReflect.Descriptor instead.
+func (*HookVerdict) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *HookVerdict) GetHookId() string {
+	if x != nil {
+		return x.HookId
+	}
+	return ""
+}
+
+func (x *HookVerdict) GetApproved() bool {
+	if x != nil {
+		return x.Approved
+	}
+	return false
+}
+
+func (x *HookVerdict) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *HookVerdict) GetModifiedParams() map[string]*structpb.Value {
+	if x != nil {
+		return x.ModifiedParams
+	}
+	return nil
+}
+
+type SandboxResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SandboxId     string                 `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Output        *structpb.Value        `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SandboxResult) Reset() {
+	*x = SandboxResult{}
+	mi := &file_tool_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SandboxResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SandboxResult) ProtoMessage() {}
+
+func (x *SandboxResult) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SandboxResult.ProtoReflect.Descriptor instead.
+func (*SandboxResult) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SandboxResult) GetSandboxId() string {
+	if x != nil {
+		return x.SandboxId
+	}
+	return ""
+}
+
+func (x *SandboxResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *SandboxResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *SandboxResult) GetOutput() *structpb.Value {
+	if x != nil {
+		return x.Output
+	}
+	return nil
+}
+
+// ToolExecutionEvent is the Daemon→App message in the bidirectional ExecuteTool stream.
+type ToolExecutionEvent struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Sequence  int64                  `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*ToolExecutionEvent_Auth
+	//	*ToolExecutionEvent_Hook
+	//	*ToolExecutionEvent_Sandbox
+	//	*ToolExecutionEvent_Result
+	Event         isToolExecutionEvent_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolExecutionEvent) Reset() {
+	*x = ToolExecutionEvent{}
+	mi := &file_tool_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolExecutionEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolExecutionEvent) ProtoMessage() {}
+
+func (x *ToolExecutionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolExecutionEvent.ProtoReflect.Descriptor instead.
+func (*ToolExecutionEvent) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ToolExecutionEvent) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ToolExecutionEvent) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *ToolExecutionEvent) GetEvent() isToolExecutionEvent_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *ToolExecutionEvent) GetAuth() *AuthResult {
+	if x != nil {
+		if x, ok := x.Event.(*ToolExecutionEvent_Auth); ok {
+			return x.Auth
+		}
+	}
+	return nil
+}
+
+func (x *ToolExecutionEvent) GetHook() *HookInvocation {
+	if x != nil {
+		if x, ok := x.Event.(*ToolExecutionEvent_Hook); ok {
+			return x.Hook
+		}
+	}
+	return nil
+}
+
+func (x *ToolExecutionEvent) GetSandbox() *SandboxInvocation {
+	if x != nil {
+		if x, ok := x.Event.(*ToolExecutionEvent_Sandbox); ok {
+			return x.Sandbox
+		}
+	}
+	return nil
+}
+
+func (x *ToolExecutionEvent) GetResult() *ToolResult {
+	if x != nil {
+		if x, ok := x.Event.(*ToolExecutionEvent_Result); ok {
+			return x.Result
+		}
+	}
+	return nil
+}
+
+type isToolExecutionEvent_Event interface {
+	isToolExecutionEvent_Event()
+}
+
+type ToolExecutionEvent_Auth struct {
+	Auth *AuthResult `protobuf:"bytes,10,opt,name=auth,proto3,oneof"`
+}
+
+type ToolExecutionEvent_Hook struct {
+	Hook *HookInvocation `protobuf:"bytes,11,opt,name=hook,proto3,oneof"`
+}
+
+type ToolExecutionEvent_Sandbox struct {
+	Sandbox *SandboxInvocation `protobuf:"bytes,12,opt,name=sandbox,proto3,oneof"`
+}
+
+type ToolExecutionEvent_Result struct {
+	Result *ToolResult `protobuf:"bytes,13,opt,name=result,proto3,oneof"`
+}
+
+func (*ToolExecutionEvent_Auth) isToolExecutionEvent_Event() {}
+
+func (*ToolExecutionEvent_Hook) isToolExecutionEvent_Event() {}
+
+func (*ToolExecutionEvent_Sandbox) isToolExecutionEvent_Event() {}
+
+func (*ToolExecutionEvent_Result) isToolExecutionEvent_Event() {}
+
+type AuthResult struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Passed         bool                   `protobuf:"varint,1,opt,name=passed,proto3" json:"passed,omitempty"`
+	Reason         string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	EffectiveLevel int32                  `protobuf:"varint,3,opt,name=effective_level,json=effectiveLevel,proto3" json:"effective_level,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AuthResult) Reset() {
+	*x = AuthResult{}
+	mi := &file_tool_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthResult) ProtoMessage() {}
+
+func (x *AuthResult) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthResult.ProtoReflect.Descriptor instead.
+func (*AuthResult) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AuthResult) GetPassed() bool {
+	if x != nil {
+		return x.Passed
+	}
+	return false
+}
+
+func (x *AuthResult) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AuthResult) GetEffectiveLevel() int32 {
+	if x != nil {
+		return x.EffectiveLevel
+	}
+	return 0
+}
+
+type HookInvocation struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	HookId        string                     `protobuf:"bytes,1,opt,name=hook_id,json=hookId,proto3" json:"hook_id,omitempty"`
+	Stage         string                     `protobuf:"bytes,2,opt,name=stage,proto3" json:"stage,omitempty"`
+	HookName      string                     `protobuf:"bytes,3,opt,name=hook_name,json=hookName,proto3" json:"hook_name,omitempty"`
+	Payload       map[string]*structpb.Value `protobuf:"bytes,4,rep,name=payload,proto3" json:"payload,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HookInvocation) Reset() {
+	*x = HookInvocation{}
+	mi := &file_tool_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HookInvocation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HookInvocation) ProtoMessage() {}
+
+func (x *HookInvocation) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HookInvocation.ProtoReflect.Descriptor instead.
+func (*HookInvocation) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *HookInvocation) GetHookId() string {
+	if x != nil {
+		return x.HookId
+	}
+	return ""
+}
+
+func (x *HookInvocation) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *HookInvocation) GetHookName() string {
+	if x != nil {
+		return x.HookName
+	}
+	return ""
+}
+
+func (x *HookInvocation) GetPayload() map[string]*structpb.Value {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+type SandboxInvocation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SandboxId     string                 `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	Params        map[string]string      `protobuf:"bytes,3,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SandboxInvocation) Reset() {
+	*x = SandboxInvocation{}
+	mi := &file_tool_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SandboxInvocation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SandboxInvocation) ProtoMessage() {}
+
+func (x *SandboxInvocation) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SandboxInvocation.ProtoReflect.Descriptor instead.
+func (*SandboxInvocation) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SandboxInvocation) GetSandboxId() string {
+	if x != nil {
+		return x.SandboxId
+	}
+	return ""
+}
+
+func (x *SandboxInvocation) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *SandboxInvocation) GetParams() map[string]string {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+type ManifestEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SecurityLevel int32                  `protobuf:"varint,2,opt,name=security_level,json=securityLevel,proto3" json:"security_level,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManifestEntry) Reset() {
+	*x = ManifestEntry{}
+	mi := &file_tool_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManifestEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManifestEntry) ProtoMessage() {}
+
+func (x *ManifestEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManifestEntry.ProtoReflect.Descriptor instead.
+func (*ManifestEntry) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ManifestEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ManifestEntry) GetSecurityLevel() int32 {
+	if x != nil {
+		return x.SecurityLevel
+	}
+	return 0
+}
+
+type ManifestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppName       string                 `protobuf:"bytes,1,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`
+	Tools         []*ManifestEntry       `protobuf:"bytes,2,rep,name=tools,proto3" json:"tools,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManifestRequest) Reset() {
+	*x = ManifestRequest{}
+	mi := &file_tool_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManifestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManifestRequest) ProtoMessage() {}
+
+func (x *ManifestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManifestRequest.ProtoReflect.Descriptor instead.
+func (*ManifestRequest) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ManifestRequest) GetAppName() string {
+	if x != nil {
+		return x.AppName
+	}
+	return ""
+}
+
+func (x *ManifestRequest) GetTools() []*ManifestEntry {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+type ManifestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Tools         []*ManifestStatus      `protobuf:"bytes,2,rep,name=tools,proto3" json:"tools,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManifestResponse) Reset() {
+	*x = ManifestResponse{}
+	mi := &file_tool_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManifestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManifestResponse) ProtoMessage() {}
+
+func (x *ManifestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManifestResponse.ProtoReflect.Descriptor instead.
+func (*ManifestResponse) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ManifestResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *ManifestResponse) GetTools() []*ManifestStatus {
+	if x != nil {
+		return x.Tools
+	}
+	return nil
+}
+
+func (x *ManifestResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type ManifestStatus struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Accepted       bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Reason         string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	EffectiveLevel int32                  `protobuf:"varint,4,opt,name=effective_level,json=effectiveLevel,proto3" json:"effective_level,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ManifestStatus) Reset() {
+	*x = ManifestStatus{}
+	mi := &file_tool_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManifestStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManifestStatus) ProtoMessage() {}
+
+func (x *ManifestStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_tool_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManifestStatus.ProtoReflect.Descriptor instead.
+func (*ManifestStatus) Descriptor() ([]byte, []int) {
+	return file_tool_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ManifestStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ManifestStatus) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *ManifestStatus) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ManifestStatus) GetEffectiveLevel() int32 {
+	if x != nil {
+		return x.EffectiveLevel
+	}
+	return 0
 }
 
 var File_tool_proto protoreflect.FileDescriptor
@@ -340,18 +1394,112 @@ const file_tool_proto_rawDesc = "" +
 	"ToolResult\x12.\n" +
 	"\x06output\x18\x01 \x01(\v2\x16.google.protobuf.ValueR\x06output\x12\x19\n" +
 	"\bis_error\x18\x02 \x01(\bR\aisError\x12\x1b\n" +
-	"\terror_msg\x18\x03 \x01(\tR\berrorMsg\"\x12\n" +
-	"\x10ListToolsRequest\">\n" +
-	"\x11ListToolsResponse\x12)\n" +
-	"\x05tools\x18\x01 \x03(\v2\x13.gogent.v1.ToolInfoR\x05tools\"Y\n" +
-	"\x12ExecuteToolRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12/\n" +
-	"\x06params\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06params\"D\n" +
-	"\x13ExecuteToolResponse\x12-\n" +
-	"\x06result\x18\x01 \x01(\v2\x15.gogent.v1.ToolResultR\x06result2\xa3\x01\n" +
-	"\vToolService\x12F\n" +
-	"\tListTools\x12\x1b.gogent.v1.ListToolsRequest\x1a\x1c.gogent.v1.ListToolsResponse\x12L\n" +
-	"\vExecuteTool\x12\x1d.gogent.v1.ExecuteToolRequest\x1a\x1e.gogent.v1.ExecuteToolResponseB\xa1\x01\n" +
+	"\terror_msg\x18\x03 \x01(\tR\berrorMsg\"\xb1\x02\n" +
+	"\x13RegisterToolRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06driver\x18\x02 \x01(\tR\x06driver\x12\x18\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12\x1a\n" +
+	"\bendpoint\x18\x04 \x01(\tR\bendpoint\x12#\n" +
+	"\rdefault_level\x18\x05 \x01(\x05R\fdefaultLevel\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x129\n" +
+	"\x03env\x18\a \x03(\v2'.gogent.v1.RegisterToolRequest.EnvEntryR\x03env\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"U\n" +
+	"\x14RegisterToolResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"+\n" +
+	"\x15UnregisterToolRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"W\n" +
+	"\x16UnregisterToolResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"*\n" +
+	"\x14GetToolStatusRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xb1\x02\n" +
+	"\x15GetToolStatusResponse\x12\x16\n" +
+	"\x06exists\x18\x01 \x01(\bR\x06exists\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06driver\x18\x03 \x01(\tR\x06driver\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\x12#\n" +
+	"\rdefault_level\x18\x06 \x01(\x05R\fdefaultLevel\x12%\n" +
+	"\x0euptime_seconds\x18\a \x01(\x03R\ruptimeSeconds\x12)\n" +
+	"\x10invocation_count\x18\b \x01(\x03R\x0finvocationCount\x12#\n" +
+	"\rfailure_count\x18\t \x01(\x03R\ffailureCount\"\xc6\x01\n" +
+	"\vToolControl\x129\n" +
+	"\arequest\x18\x01 \x01(\v2\x1d.gogent.v1.ToolExecuteRequestH\x00R\arequest\x122\n" +
+	"\averdict\x18\x02 \x01(\v2\x16.gogent.v1.HookVerdictH\x00R\averdict\x12A\n" +
+	"\x0esandbox_result\x18\x03 \x01(\v2\x18.gogent.v1.SandboxResultH\x00R\rsandboxResultB\x05\n" +
+	"\x03msg\"b\n" +
+	"\x12ToolExecuteRequest\x12\x1b\n" +
+	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12/\n" +
+	"\x06params\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06params\"\x8a\x02\n" +
+	"\vHookVerdict\x12\x17\n" +
+	"\ahook_id\x18\x01 \x01(\tR\x06hookId\x12\x1a\n" +
+	"\bapproved\x18\x02 \x01(\bR\bapproved\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12S\n" +
+	"\x0fmodified_params\x18\x04 \x03(\v2*.gogent.v1.HookVerdict.ModifiedParamsEntryR\x0emodifiedParams\x1aY\n" +
+	"\x13ModifiedParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value:\x028\x01\"\x9d\x01\n" +
+	"\rSandboxResult\x12\x1d\n" +
+	"\n" +
+	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12.\n" +
+	"\x06output\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\x06output\"\xa1\x02\n" +
+	"\x12ToolExecutionEvent\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12+\n" +
+	"\x04auth\x18\n" +
+	" \x01(\v2\x15.gogent.v1.AuthResultH\x00R\x04auth\x12/\n" +
+	"\x04hook\x18\v \x01(\v2\x19.gogent.v1.HookInvocationH\x00R\x04hook\x128\n" +
+	"\asandbox\x18\f \x01(\v2\x1c.gogent.v1.SandboxInvocationH\x00R\asandbox\x12/\n" +
+	"\x06result\x18\r \x01(\v2\x15.gogent.v1.ToolResultH\x00R\x06resultB\a\n" +
+	"\x05event\"e\n" +
+	"\n" +
+	"AuthResult\x12\x16\n" +
+	"\x06passed\x18\x01 \x01(\bR\x06passed\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12'\n" +
+	"\x0feffective_level\x18\x03 \x01(\x05R\x0eeffectiveLevel\"\xf2\x01\n" +
+	"\x0eHookInvocation\x12\x17\n" +
+	"\ahook_id\x18\x01 \x01(\tR\x06hookId\x12\x14\n" +
+	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x1b\n" +
+	"\thook_name\x18\x03 \x01(\tR\bhookName\x12@\n" +
+	"\apayload\x18\x04 \x03(\v2&.gogent.v1.HookInvocation.PayloadEntryR\apayload\x1aR\n" +
+	"\fPayloadEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value:\x028\x01\"\xc7\x01\n" +
+	"\x11SandboxInvocation\x12\x1d\n" +
+	"\n" +
+	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12@\n" +
+	"\x06params\x18\x03 \x03(\v2(.gogent.v1.SandboxInvocation.ParamsEntryR\x06params\x1a9\n" +
+	"\vParamsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"J\n" +
+	"\rManifestEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
+	"\x0esecurity_level\x18\x02 \x01(\x05R\rsecurityLevel\"\\\n" +
+	"\x0fManifestRequest\x12\x19\n" +
+	"\bapp_name\x18\x01 \x01(\tR\aappName\x12.\n" +
+	"\x05tools\x18\x02 \x03(\v2\x18.gogent.v1.ManifestEntryR\x05tools\"\x84\x01\n" +
+	"\x10ManifestResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12/\n" +
+	"\x05tools\x18\x02 \x03(\v2\x19.gogent.v1.ManifestStatusR\x05tools\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\x81\x01\n" +
+	"\x0eManifestStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12'\n" +
+	"\x0feffective_level\x18\x04 \x01(\x05R\x0eeffectiveLevel2\xa0\x03\n" +
+	"\vToolService\x12O\n" +
+	"\fRegisterTool\x12\x1e.gogent.v1.RegisterToolRequest\x1a\x1f.gogent.v1.RegisterToolResponse\x12U\n" +
+	"\x0eUnregisterTool\x12 .gogent.v1.UnregisterToolRequest\x1a!.gogent.v1.UnregisterToolResponse\x12R\n" +
+	"\rGetToolStatus\x12\x1f.gogent.v1.GetToolStatusRequest\x1a .gogent.v1.GetToolStatusResponse\x12H\n" +
+	"\vExecuteTool\x12\x16.gogent.v1.ToolControl\x1a\x1d.gogent.v1.ToolExecutionEvent(\x010\x01\x12K\n" +
+	"\x10RegisterManifest\x12\x1a.gogent.v1.ManifestRequest\x1a\x1b.gogent.v1.ManifestResponseB\xa1\x01\n" +
 	"\rcom.gogent.v1B\tToolProtoP\x01Z@github.com/tltre/gogent/internal/grpctransport/gogentv1;gogentv1\xa2\x02\x03GXX\xaa\x02\tGogent.V1\xca\x02\tGogent\\V1\xe2\x02\x15Gogent\\V1\\GPBMetadata\xea\x02\n" +
 	"Gogent::V1b\x06proto3"
 
@@ -367,32 +1515,70 @@ func file_tool_proto_rawDescGZIP() []byte {
 	return file_tool_proto_rawDescData
 }
 
-var file_tool_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_tool_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_tool_proto_goTypes = []any{
-	(*ToolInfo)(nil),            // 0: gogent.v1.ToolInfo
-	(*ToolResult)(nil),          // 1: gogent.v1.ToolResult
-	(*ListToolsRequest)(nil),    // 2: gogent.v1.ListToolsRequest
-	(*ListToolsResponse)(nil),   // 3: gogent.v1.ListToolsResponse
-	(*ExecuteToolRequest)(nil),  // 4: gogent.v1.ExecuteToolRequest
-	(*ExecuteToolResponse)(nil), // 5: gogent.v1.ExecuteToolResponse
-	(*structpb.Value)(nil),      // 6: google.protobuf.Value
-	(*structpb.Struct)(nil),     // 7: google.protobuf.Struct
+	(*ToolInfo)(nil),               // 0: gogent.v1.ToolInfo
+	(*ToolResult)(nil),             // 1: gogent.v1.ToolResult
+	(*RegisterToolRequest)(nil),    // 2: gogent.v1.RegisterToolRequest
+	(*RegisterToolResponse)(nil),   // 3: gogent.v1.RegisterToolResponse
+	(*UnregisterToolRequest)(nil),  // 4: gogent.v1.UnregisterToolRequest
+	(*UnregisterToolResponse)(nil), // 5: gogent.v1.UnregisterToolResponse
+	(*GetToolStatusRequest)(nil),   // 6: gogent.v1.GetToolStatusRequest
+	(*GetToolStatusResponse)(nil),  // 7: gogent.v1.GetToolStatusResponse
+	(*ToolControl)(nil),            // 8: gogent.v1.ToolControl
+	(*ToolExecuteRequest)(nil),     // 9: gogent.v1.ToolExecuteRequest
+	(*HookVerdict)(nil),            // 10: gogent.v1.HookVerdict
+	(*SandboxResult)(nil),          // 11: gogent.v1.SandboxResult
+	(*ToolExecutionEvent)(nil),     // 12: gogent.v1.ToolExecutionEvent
+	(*AuthResult)(nil),             // 13: gogent.v1.AuthResult
+	(*HookInvocation)(nil),         // 14: gogent.v1.HookInvocation
+	(*SandboxInvocation)(nil),      // 15: gogent.v1.SandboxInvocation
+	(*ManifestEntry)(nil),          // 16: gogent.v1.ManifestEntry
+	(*ManifestRequest)(nil),        // 17: gogent.v1.ManifestRequest
+	(*ManifestResponse)(nil),       // 18: gogent.v1.ManifestResponse
+	(*ManifestStatus)(nil),         // 19: gogent.v1.ManifestStatus
+	nil,                            // 20: gogent.v1.RegisterToolRequest.EnvEntry
+	nil,                            // 21: gogent.v1.HookVerdict.ModifiedParamsEntry
+	nil,                            // 22: gogent.v1.HookInvocation.PayloadEntry
+	nil,                            // 23: gogent.v1.SandboxInvocation.ParamsEntry
+	(*structpb.Value)(nil),         // 24: google.protobuf.Value
+	(*structpb.Struct)(nil),        // 25: google.protobuf.Struct
 }
 var file_tool_proto_depIdxs = []int32{
-	6, // 0: gogent.v1.ToolInfo.parameters:type_name -> google.protobuf.Value
-	6, // 1: gogent.v1.ToolResult.output:type_name -> google.protobuf.Value
-	0, // 2: gogent.v1.ListToolsResponse.tools:type_name -> gogent.v1.ToolInfo
-	7, // 3: gogent.v1.ExecuteToolRequest.params:type_name -> google.protobuf.Struct
-	1, // 4: gogent.v1.ExecuteToolResponse.result:type_name -> gogent.v1.ToolResult
-	2, // 5: gogent.v1.ToolService.ListTools:input_type -> gogent.v1.ListToolsRequest
-	4, // 6: gogent.v1.ToolService.ExecuteTool:input_type -> gogent.v1.ExecuteToolRequest
-	3, // 7: gogent.v1.ToolService.ListTools:output_type -> gogent.v1.ListToolsResponse
-	5, // 8: gogent.v1.ToolService.ExecuteTool:output_type -> gogent.v1.ExecuteToolResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	24, // 0: gogent.v1.ToolInfo.parameters:type_name -> google.protobuf.Value
+	24, // 1: gogent.v1.ToolResult.output:type_name -> google.protobuf.Value
+	20, // 2: gogent.v1.RegisterToolRequest.env:type_name -> gogent.v1.RegisterToolRequest.EnvEntry
+	9,  // 3: gogent.v1.ToolControl.request:type_name -> gogent.v1.ToolExecuteRequest
+	10, // 4: gogent.v1.ToolControl.verdict:type_name -> gogent.v1.HookVerdict
+	11, // 5: gogent.v1.ToolControl.sandbox_result:type_name -> gogent.v1.SandboxResult
+	25, // 6: gogent.v1.ToolExecuteRequest.params:type_name -> google.protobuf.Struct
+	21, // 7: gogent.v1.HookVerdict.modified_params:type_name -> gogent.v1.HookVerdict.ModifiedParamsEntry
+	24, // 8: gogent.v1.SandboxResult.output:type_name -> google.protobuf.Value
+	13, // 9: gogent.v1.ToolExecutionEvent.auth:type_name -> gogent.v1.AuthResult
+	14, // 10: gogent.v1.ToolExecutionEvent.hook:type_name -> gogent.v1.HookInvocation
+	15, // 11: gogent.v1.ToolExecutionEvent.sandbox:type_name -> gogent.v1.SandboxInvocation
+	1,  // 12: gogent.v1.ToolExecutionEvent.result:type_name -> gogent.v1.ToolResult
+	22, // 13: gogent.v1.HookInvocation.payload:type_name -> gogent.v1.HookInvocation.PayloadEntry
+	23, // 14: gogent.v1.SandboxInvocation.params:type_name -> gogent.v1.SandboxInvocation.ParamsEntry
+	16, // 15: gogent.v1.ManifestRequest.tools:type_name -> gogent.v1.ManifestEntry
+	19, // 16: gogent.v1.ManifestResponse.tools:type_name -> gogent.v1.ManifestStatus
+	24, // 17: gogent.v1.HookVerdict.ModifiedParamsEntry.value:type_name -> google.protobuf.Value
+	24, // 18: gogent.v1.HookInvocation.PayloadEntry.value:type_name -> google.protobuf.Value
+	2,  // 19: gogent.v1.ToolService.RegisterTool:input_type -> gogent.v1.RegisterToolRequest
+	4,  // 20: gogent.v1.ToolService.UnregisterTool:input_type -> gogent.v1.UnregisterToolRequest
+	6,  // 21: gogent.v1.ToolService.GetToolStatus:input_type -> gogent.v1.GetToolStatusRequest
+	8,  // 22: gogent.v1.ToolService.ExecuteTool:input_type -> gogent.v1.ToolControl
+	17, // 23: gogent.v1.ToolService.RegisterManifest:input_type -> gogent.v1.ManifestRequest
+	3,  // 24: gogent.v1.ToolService.RegisterTool:output_type -> gogent.v1.RegisterToolResponse
+	5,  // 25: gogent.v1.ToolService.UnregisterTool:output_type -> gogent.v1.UnregisterToolResponse
+	7,  // 26: gogent.v1.ToolService.GetToolStatus:output_type -> gogent.v1.GetToolStatusResponse
+	12, // 27: gogent.v1.ToolService.ExecuteTool:output_type -> gogent.v1.ToolExecutionEvent
+	18, // 28: gogent.v1.ToolService.RegisterManifest:output_type -> gogent.v1.ManifestResponse
+	24, // [24:29] is the sub-list for method output_type
+	19, // [19:24] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_tool_proto_init() }
@@ -400,13 +1586,24 @@ func file_tool_proto_init() {
 	if File_tool_proto != nil {
 		return
 	}
+	file_tool_proto_msgTypes[8].OneofWrappers = []any{
+		(*ToolControl_Request)(nil),
+		(*ToolControl_Verdict)(nil),
+		(*ToolControl_SandboxResult)(nil),
+	}
+	file_tool_proto_msgTypes[12].OneofWrappers = []any{
+		(*ToolExecutionEvent_Auth)(nil),
+		(*ToolExecutionEvent_Hook)(nil),
+		(*ToolExecutionEvent_Sandbox)(nil),
+		(*ToolExecutionEvent_Result)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tool_proto_rawDesc), len(file_tool_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

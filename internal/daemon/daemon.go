@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/pkg/component"
 	"gopkg.in/yaml.v3"
 )
@@ -29,12 +30,24 @@ type Daemon struct {
 	compRetryCount        map[string]int       // retry count per component name
 	compRetryFirstAttempt map[string]time.Time // timestamp of first retry attempt
 	compRetryMu           sync.Mutex           // protects retry maps
+
+	// v0.12.1: Centralized tool management.
+	toolReg   *tool.ToolRegistry // registered tool definitions
+	grpcSrv   *GrpcServer        // gRPC ToolService server
+	grpcReady bool               // true after StartGrpc() completes
 }
 
 // NewDaemon creates a new Daemon with an empty AppStore and the given base
 // port for allocation. It scans ~/.gogent/ for surviving app instances from
 // a previous daemon crash and recovers them.
 func NewDaemon(basePort int) *Daemon {
+	// Initialize tool registry with built-in tools + tools.yaml overrides.
+	toolReg := tool.NewToolRegistry()
+	toolReg.LoadDefault()
+	if err := toolReg.LoadFromFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "[daemon] warn: load tools.yaml: %v\n", err)
+	}
+
 	d := &Daemon{
 		store:                 NewAppStore(),
 		compStore:             NewComponentStore(),
@@ -42,6 +55,7 @@ func NewDaemon(basePort int) *Daemon {
 		reservedPorts:         make(map[int]bool),
 		compRetryCount:        make(map[string]int),
 		compRetryFirstAttempt: make(map[string]time.Time),
+		toolReg:               toolReg,
 	}
 	d.RecoverApps()
 	return d
@@ -107,6 +121,31 @@ func (d *Daemon) Store() *AppStore {
 // ComponentStore returns the daemon's ComponentStore for centralized services.
 func (d *Daemon) ComponentStore() *ComponentStore {
 	return d.compStore
+}
+
+// ToolRegistry returns the daemon's tool registry (v0.12.1).
+func (d *Daemon) ToolRegistry() *tool.ToolRegistry {
+	return d.toolReg
+}
+
+// StartGrpc initializes and starts the gRPC server for ToolService.
+// The gRPC port is basePort+1. This is called explicitly from runDaemon
+// after other subsystems are ready.
+func (d *Daemon) StartGrpc() {
+	d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg)
+	if d.grpcSrv != nil {
+		d.grpcSrv.Start()
+		d.grpcReady = true
+	}
+}
+
+// GrpcAddr returns the gRPC server address (e.g. "127.0.0.1:9091").
+// Returns "" if the gRPC server was not started or failed to bind.
+func (d *Daemon) GrpcAddr() string {
+	if d.grpcSrv == nil {
+		return ""
+	}
+	return d.grpcSrv.Addr()
 }
 
 // GRPCHealthCheck performs a public gRPC health check against the target.
@@ -425,6 +464,11 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*api.AppI
 		}
 	}
 
+	// Inject daemon gRPC address for agent-side ToolManager discovery (v0.12.1).
+	if addr := d.GrpcAddr(); addr != "" {
+		envVars = append(envVars, "GOGENT_DAEMON_GRPC_ADDR="+addr)
+	}
+
 	// 4. Allocate a port for the App process.
 	port, err := d.allocatePort()
 	if err != nil {
@@ -621,6 +665,13 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 
 		// Clean up port file.
 		RemoveAppPortFile(info.Name)
+	}
+
+	// Stop gRPC server.
+	if d.grpcSrv != nil {
+		if err := d.grpcSrv.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("grpc shutdown: %w", err))
+		}
 	}
 
 	if len(errs) > 0 {

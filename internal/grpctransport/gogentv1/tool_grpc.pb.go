@@ -19,18 +19,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ToolService_ListTools_FullMethodName   = "/gogent.v1.ToolService/ListTools"
-	ToolService_ExecuteTool_FullMethodName = "/gogent.v1.ToolService/ExecuteTool"
+	ToolService_RegisterTool_FullMethodName     = "/gogent.v1.ToolService/RegisterTool"
+	ToolService_UnregisterTool_FullMethodName   = "/gogent.v1.ToolService/UnregisterTool"
+	ToolService_GetToolStatus_FullMethodName    = "/gogent.v1.ToolService/GetToolStatus"
+	ToolService_ExecuteTool_FullMethodName      = "/gogent.v1.ToolService/ExecuteTool"
+	ToolService_RegisterManifest_FullMethodName = "/gogent.v1.ToolService/RegisterManifest"
 )
 
 // ToolServiceClient is the client API for ToolService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ToolService exposes tool discovery and execution operations.
 type ToolServiceClient interface {
-	ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error)
-	ExecuteTool(ctx context.Context, in *ExecuteToolRequest, opts ...grpc.CallOption) (*ExecuteToolResponse, error)
+	// 工具定义管理 (v0.12.1)
+	RegisterTool(ctx context.Context, in *RegisterToolRequest, opts ...grpc.CallOption) (*RegisterToolResponse, error)
+	UnregisterTool(ctx context.Context, in *UnregisterToolRequest, opts ...grpc.CallOption) (*UnregisterToolResponse, error)
+	GetToolStatus(ctx context.Context, in *GetToolStatusRequest, opts ...grpc.CallOption) (*GetToolStatusResponse, error)
+	// 工具执行 - bidirectional streaming (v0.12.1)
+	ExecuteTool(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ToolControl, ToolExecutionEvent], error)
+	// Manifest 注册 (v0.12.3)
+	RegisterManifest(ctx context.Context, in *ManifestRequest, opts ...grpc.CallOption) (*ManifestResponse, error)
 }
 
 type toolServiceClient struct {
@@ -41,20 +48,53 @@ func NewToolServiceClient(cc grpc.ClientConnInterface) ToolServiceClient {
 	return &toolServiceClient{cc}
 }
 
-func (c *toolServiceClient) ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error) {
+func (c *toolServiceClient) RegisterTool(ctx context.Context, in *RegisterToolRequest, opts ...grpc.CallOption) (*RegisterToolResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListToolsResponse)
-	err := c.cc.Invoke(ctx, ToolService_ListTools_FullMethodName, in, out, cOpts...)
+	out := new(RegisterToolResponse)
+	err := c.cc.Invoke(ctx, ToolService_RegisterTool_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *toolServiceClient) ExecuteTool(ctx context.Context, in *ExecuteToolRequest, opts ...grpc.CallOption) (*ExecuteToolResponse, error) {
+func (c *toolServiceClient) UnregisterTool(ctx context.Context, in *UnregisterToolRequest, opts ...grpc.CallOption) (*UnregisterToolResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExecuteToolResponse)
-	err := c.cc.Invoke(ctx, ToolService_ExecuteTool_FullMethodName, in, out, cOpts...)
+	out := new(UnregisterToolResponse)
+	err := c.cc.Invoke(ctx, ToolService_UnregisterTool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *toolServiceClient) GetToolStatus(ctx context.Context, in *GetToolStatusRequest, opts ...grpc.CallOption) (*GetToolStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetToolStatusResponse)
+	err := c.cc.Invoke(ctx, ToolService_GetToolStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *toolServiceClient) ExecuteTool(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ToolControl, ToolExecutionEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ToolService_ServiceDesc.Streams[0], ToolService_ExecuteTool_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ToolControl, ToolExecutionEvent]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ToolService_ExecuteToolClient = grpc.BidiStreamingClient[ToolControl, ToolExecutionEvent]
+
+func (c *toolServiceClient) RegisterManifest(ctx context.Context, in *ManifestRequest, opts ...grpc.CallOption) (*ManifestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ManifestResponse)
+	err := c.cc.Invoke(ctx, ToolService_RegisterManifest_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +104,15 @@ func (c *toolServiceClient) ExecuteTool(ctx context.Context, in *ExecuteToolRequ
 // ToolServiceServer is the server API for ToolService service.
 // All implementations must embed UnimplementedToolServiceServer
 // for forward compatibility.
-//
-// ToolService exposes tool discovery and execution operations.
 type ToolServiceServer interface {
-	ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error)
-	ExecuteTool(context.Context, *ExecuteToolRequest) (*ExecuteToolResponse, error)
+	// 工具定义管理 (v0.12.1)
+	RegisterTool(context.Context, *RegisterToolRequest) (*RegisterToolResponse, error)
+	UnregisterTool(context.Context, *UnregisterToolRequest) (*UnregisterToolResponse, error)
+	GetToolStatus(context.Context, *GetToolStatusRequest) (*GetToolStatusResponse, error)
+	// 工具执行 - bidirectional streaming (v0.12.1)
+	ExecuteTool(grpc.BidiStreamingServer[ToolControl, ToolExecutionEvent]) error
+	// Manifest 注册 (v0.12.3)
+	RegisterManifest(context.Context, *ManifestRequest) (*ManifestResponse, error)
 	mustEmbedUnimplementedToolServiceServer()
 }
 
@@ -79,11 +123,20 @@ type ToolServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedToolServiceServer struct{}
 
-func (UnimplementedToolServiceServer) ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ListTools not implemented")
+func (UnimplementedToolServiceServer) RegisterTool(context.Context, *RegisterToolRequest) (*RegisterToolResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterTool not implemented")
 }
-func (UnimplementedToolServiceServer) ExecuteTool(context.Context, *ExecuteToolRequest) (*ExecuteToolResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method ExecuteTool not implemented")
+func (UnimplementedToolServiceServer) UnregisterTool(context.Context, *UnregisterToolRequest) (*UnregisterToolResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnregisterTool not implemented")
+}
+func (UnimplementedToolServiceServer) GetToolStatus(context.Context, *GetToolStatusRequest) (*GetToolStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetToolStatus not implemented")
+}
+func (UnimplementedToolServiceServer) ExecuteTool(grpc.BidiStreamingServer[ToolControl, ToolExecutionEvent]) error {
+	return status.Error(codes.Unimplemented, "method ExecuteTool not implemented")
+}
+func (UnimplementedToolServiceServer) RegisterManifest(context.Context, *ManifestRequest) (*ManifestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterManifest not implemented")
 }
 func (UnimplementedToolServiceServer) mustEmbedUnimplementedToolServiceServer() {}
 func (UnimplementedToolServiceServer) testEmbeddedByValue()                     {}
@@ -106,38 +159,81 @@ func RegisterToolServiceServer(s grpc.ServiceRegistrar, srv ToolServiceServer) {
 	s.RegisterService(&ToolService_ServiceDesc, srv)
 }
 
-func _ToolService_ListTools_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListToolsRequest)
+func _ToolService_RegisterTool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterToolRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ToolServiceServer).ListTools(ctx, in)
+		return srv.(ToolServiceServer).RegisterTool(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ToolService_ListTools_FullMethodName,
+		FullMethod: ToolService_RegisterTool_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ToolServiceServer).ListTools(ctx, req.(*ListToolsRequest))
+		return srv.(ToolServiceServer).RegisterTool(ctx, req.(*RegisterToolRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ToolService_ExecuteTool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecuteToolRequest)
+func _ToolService_UnregisterTool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnregisterToolRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ToolServiceServer).ExecuteTool(ctx, in)
+		return srv.(ToolServiceServer).UnregisterTool(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ToolService_ExecuteTool_FullMethodName,
+		FullMethod: ToolService_UnregisterTool_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ToolServiceServer).ExecuteTool(ctx, req.(*ExecuteToolRequest))
+		return srv.(ToolServiceServer).UnregisterTool(ctx, req.(*UnregisterToolRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ToolService_GetToolStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetToolStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ToolServiceServer).GetToolStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ToolService_GetToolStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ToolServiceServer).GetToolStatus(ctx, req.(*GetToolStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ToolService_ExecuteTool_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ToolServiceServer).ExecuteTool(&grpc.GenericServerStream[ToolControl, ToolExecutionEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ToolService_ExecuteToolServer = grpc.BidiStreamingServer[ToolControl, ToolExecutionEvent]
+
+func _ToolService_RegisterManifest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ManifestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ToolServiceServer).RegisterManifest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ToolService_RegisterManifest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ToolServiceServer).RegisterManifest(ctx, req.(*ManifestRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -150,14 +246,29 @@ var ToolService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ToolServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ListTools",
-			Handler:    _ToolService_ListTools_Handler,
+			MethodName: "RegisterTool",
+			Handler:    _ToolService_RegisterTool_Handler,
 		},
 		{
-			MethodName: "ExecuteTool",
-			Handler:    _ToolService_ExecuteTool_Handler,
+			MethodName: "UnregisterTool",
+			Handler:    _ToolService_UnregisterTool_Handler,
+		},
+		{
+			MethodName: "GetToolStatus",
+			Handler:    _ToolService_GetToolStatus_Handler,
+		},
+		{
+			MethodName: "RegisterManifest",
+			Handler:    _ToolService_RegisterManifest_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ExecuteTool",
+			Handler:       _ToolService_ExecuteTool_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "tool.proto",
 }

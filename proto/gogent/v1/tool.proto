@@ -6,6 +6,8 @@ option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
 
 import "google/protobuf/struct.proto";
 
+// ── 保留消息 ──
+
 // ToolInfo describes a registered tool exposed to agents.
 message ToolInfo {
   string name = 1;
@@ -20,27 +22,151 @@ message ToolResult {
   string error_msg = 3;
 }
 
-// ListToolsRequest is the input to ToolService.ListTools.
-message ListToolsRequest {}
+// ── 工具注册/注销 ──
 
-// ListToolsResponse is the output from ToolService.ListTools.
-message ListToolsResponse {
-  repeated ToolInfo tools = 1;
+message RegisterToolRequest {
+  string name = 1;
+  string driver = 2;           // "builtin" | "process" | "http"
+  string command = 3;
+  string endpoint = 4;
+  int32 default_level = 5;
+  string description = 6;
+  map<string, string> env = 7;
 }
 
-// ExecuteToolRequest is the input to ToolService.ExecuteTool.
-message ExecuteToolRequest {
+message RegisterToolResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message UnregisterToolRequest {
   string name = 1;
+}
+
+message UnregisterToolResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// ── 工具状态查询 ──
+
+message GetToolStatusRequest {
+  string name = 1;
+}
+
+message GetToolStatusResponse {
+  bool exists = 1;
+  string name = 2;
+  string driver = 3;
+  string status = 4;           // "registered" | "active" | "unhealthy" | "stopped"
+  string description = 5;
+  int32 default_level = 6;
+  int64 uptime_seconds = 7;
+  int64 invocation_count = 8;
+  int64 failure_count = 9;
+}
+
+// ── ExecuteTool 双向流 ──
+
+// ToolControl is the App→Daemon message in the bidirectional ExecuteTool stream.
+message ToolControl {
+  oneof msg {
+    ToolExecuteRequest request = 1;
+    HookVerdict        verdict = 2;
+    SandboxResult      sandbox_result = 3;
+  }
+}
+
+// ToolExecuteRequest initiates a tool execution. This is always the first
+// message in the bidirectional stream. Named ToolExecuteRequest (not
+// ExecuteRequest) to avoid collision with sandbox.proto's ExecuteRequest
+// in the same gogent.v1 package.
+message ToolExecuteRequest {
+  string tool_name = 1;
   google.protobuf.Struct params = 2;
 }
 
-// ExecuteToolResponse is the output from ToolService.ExecuteTool.
-message ExecuteToolResponse {
-  ToolResult result = 1;
+message HookVerdict {
+  string hook_id = 1;
+  bool approved = 2;
+  string reason = 3;
+  map<string, google.protobuf.Value> modified_params = 4;
 }
 
-// ToolService exposes tool discovery and execution operations.
+message SandboxResult {
+  string sandbox_id = 1;
+  bool success = 2;
+  string error_message = 3;
+  google.protobuf.Value output = 4;
+}
+
+// ToolExecutionEvent is the Daemon→App message in the bidirectional ExecuteTool stream.
+message ToolExecutionEvent {
+  string request_id = 1;
+  int64 sequence = 2;
+  oneof event {
+    AuthResult        auth    = 10;
+    HookInvocation    hook    = 11;
+    SandboxInvocation sandbox = 12;
+    ToolResult        result  = 13;
+  }
+}
+
+message AuthResult {
+  bool passed = 1;
+  string reason = 2;
+  int32 effective_level = 3;
+}
+
+message HookInvocation {
+  string hook_id = 1;
+  string stage = 2;
+  string hook_name = 3;
+  map<string, google.protobuf.Value> payload = 4;
+}
+
+message SandboxInvocation {
+  string sandbox_id = 1;
+  string action = 2;
+  map<string, string> params = 3;
+}
+
+// ── Manifest 注册（v0.12.3 实现） ──
+
+message ManifestEntry {
+  string name = 1;
+  int32 security_level = 2;
+}
+
+message ManifestRequest {
+  string app_name = 1;
+  repeated ManifestEntry tools = 2;
+}
+
+message ManifestResponse {
+  bool accepted = 1;
+  repeated ManifestStatus tools = 2;
+  string error_message = 3;
+}
+
+message ManifestStatus {
+  string name = 1;
+  bool accepted = 2;
+  string reason = 3;
+  int32 effective_level = 4;
+}
+
+// ── Service ──
+
 service ToolService {
-  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
-  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+  // 工具定义管理 (v0.12.1)
+  rpc RegisterTool(RegisterToolRequest) returns (RegisterToolResponse);
+  rpc UnregisterTool(UnregisterToolRequest) returns (UnregisterToolResponse);
+  rpc GetToolStatus(GetToolStatusRequest) returns (GetToolStatusResponse);
+
+  // 工具执行 - bidirectional streaming (v0.12.1)
+  rpc ExecuteTool(stream ToolControl) returns (stream ToolExecutionEvent);
+
+  // Manifest 注册 (v0.12.3)
+  rpc RegisterManifest(ManifestRequest) returns (ManifestResponse);
 }

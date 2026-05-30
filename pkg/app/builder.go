@@ -187,6 +187,9 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 	comp := tool.NewComponent(cc.Name)
 
+	// v0.11-style tool config via components[].type: tool is deprecated in v0.12.
+	// HTTP/process driver tools are now managed by the daemon's ToolRegistry.
+	// Only native driver tools are registered directly here.
 	if tools, ok := cc.Config["tools"]; ok {
 		if toolList, ok := tools.([]any); ok {
 			for _, t := range toolList {
@@ -194,16 +197,11 @@ func (b *Builder) buildTool(cc ComponentConfig) (component.Component, error) {
 					name := getString(toolMap, "name")
 					desc := getString(toolMap, "description")
 					driver := getString(toolMap, "driver")
-					switch driver {
-					case string(component.DriverHTTP), string(component.DriverProcess):
-						toolImpl := tool.NewProcessTool(&tool.ProcessToolConfig{
-							Name:        name,
-							Description: desc,
-							ToolName:    getString(toolMap, "toolName"),
-							Pool:        b.pool,
-							Target:      targetFromEnvOrConfig("GOGENT_TOOL_TARGET", toolMap),
-						})
-						comp.Register(toolImpl)
+					if driver == "" || driver == string(component.DriverNative) {
+						// Native tools: register directly if they implement ITool.
+						// In v0.12, this path is replaced by daemon-side tool definitions.
+						_ = name
+						_ = desc
 					}
 				}
 			}

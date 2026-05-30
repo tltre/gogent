@@ -52,6 +52,9 @@ func runDaemon() error {
 	defer compHealthCancel()
 	d.StartComponentHealthCheck(compHealthCtx, 15*time.Second)
 
+	// Start gRPC ToolService server (v0.12.1)
+	d.StartGrpc()
+
 	// Start HTTP server (reg is nil since daemon is not a Component)
 	srv := daemon.NewDaemonServer(port, d)
 	defer srv.Shutdown(context.Background())

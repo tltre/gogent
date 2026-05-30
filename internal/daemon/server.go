@@ -38,6 +38,8 @@ func NewDaemonServer(addr string, d *Daemon) *Server {
 	mux.HandleFunc(api.PathDaemonAppsPath, s.handleAppsPath)
 	mux.HandleFunc(api.PathDaemonComponentsHealth, s.handleComponentsHealth)
 	mux.HandleFunc(api.PathDaemonInfo, s.handleInfo)
+	mux.HandleFunc(api.PathDaemonTools, s.handleTools)
+	mux.HandleFunc(api.PathDaemonToolsPath, s.handleToolsPath)
 
 	otelHandler := otelhttp.NewHandler(mux, "mgmt-daemon")
 
@@ -70,6 +72,52 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// handleTools returns all registered tool definitions.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tools := s.daemon.ToolRegistry().List()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tools)
+}
+
+// handleToolsPath returns status for a single tool, or method-not-allowed.
+func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, api.PathDaemonToolsPath)
+	if name == "" || strings.Contains(name, "/") {
+		http.Error(w, "tool name required", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		def, ok := s.daemon.ToolRegistry().Get(name)
+		if !ok {
+			http.Error(w, "tool not found", http.StatusNotFound)
+			return
+		}
+		status := s.daemon.ToolRegistry().GetStatus(name)
+		stats := s.daemon.ToolRegistry().GetStats(name)
+
+		resp := map[string]any{
+			"name":         def.Name,
+			"driver":       def.Driver,
+			"description":  def.Description,
+			"defaultLevel": def.DefaultLvl,
+			"status":       string(status),
+			"invocations":  stats.Invocations,
+			"failures":     stats.Failures,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
