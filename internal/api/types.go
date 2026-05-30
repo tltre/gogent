@@ -1,0 +1,104 @@
+package api
+
+import (
+	"github.com/tltre/gogent/pkg/component"
+)
+
+// ComponentInfo represents metadata for a managed component within an app
+// (or standalone for centralized services).
+type ComponentInfo struct {
+	Name    string               `json:"name"`
+	AppName string               `json:"app_name"`
+	Type    string               `json:"type"`
+	Driver  component.DriverType `json:"driver"`
+	Target  string               `json:"target"`
+	PID     int                  `json:"pid"`
+	Status  string               `json:"status"`
+	Apps    []string             `json:"apps,omitempty"`
+}
+
+// HealthResult represents the health status of a single component.
+type HealthResult struct {
+	Component string `json:"component"`
+	Status    string `json:"status"`
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+}
+
+// ComponentHealthResult represents the health status of a daemon-managed component.
+type ComponentHealthResult struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Driver    string `json:"driver"`
+	Status    string `json:"status"` // "ok"|"unhealthy"|"dead"|"unknown"
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+}
+
+// InfoResponse is returned by the /api/v1/app/info and /api/v1/daemon/info endpoints.
+type InfoResponse struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	GoVersion string `json:"go_version"`
+	UptimeSec int64  `json:"uptime_seconds"`
+}
+
+// AppInfo represents metadata for a running app instance.
+type AppInfo struct {
+	Name       string   `json:"name"`
+	Port       string   `json:"port"`
+	PID        int      `json:"pid"`
+	Status     string   `json:"status"`
+	ConfigPath string   `json:"config_path"`
+	StartedAt  int64    `json:"started_at"`
+	Components []string `json:"components,omitempty"`
+	Env        []string `json:"env,omitempty"`
+}
+
+// LoadAppRequest is the POST body for loading a new app into the daemon.
+type LoadAppRequest struct {
+	ConfigPath          string `json:"config_path"`
+	NeedForkApplication *bool  `json:"need_fork_application,omitempty"`
+}
+
+// AgentRunRequest is the POST body for /api/v1/app/agent/run.
+type AgentRunRequest struct {
+	Messages []AgentMessage `json:"messages"`
+	Context  map[string]any `json:"context,omitempty"`
+}
+
+// AgentMessage represents a single message in an agent run request.
+type AgentMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// AgentRunResponse is the response from /api/v1/app/agent/run.
+type AgentRunResponse struct {
+	Response string         `json:"response"`
+	Actions  []AgentAction  `json:"actions,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// AgentAction represents a tool call action in an agent run response.
+type AgentAction struct {
+	ToolName string         `json:"tool_name"`
+	Params   map[string]any `json:"params"`
+	Result   any            `json:"result"`
+}
+
+// StatusToString converts a component status to its string representation.
+func StatusToString(s component.ComponentStatus) string {
+	switch s {
+	case component.StatusUninitialized:
+		return "uninitialized"
+	case component.StatusInitialized:
+		return "initialized"
+	case component.StatusStarted:
+		return "started"
+	case component.StatusStopped:
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
