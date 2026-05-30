@@ -2,9 +2,11 @@ package tool
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
 )
@@ -14,14 +16,46 @@ type Handler struct {
 	gogentv1.UnimplementedToolServiceServer
 	registry      *ToolRegistry
 	manifestStore *ManifestStore
+	runners       map[string]Runner // key: driver type ("builtin"|"process"|"http")
+	runnersMu     sync.RWMutex
 }
 
 // NewHandler creates a ToolService gRPC handler backed by the given registry.
+// It initializes default runners for builtin/process/http and registers stub
+// handlers for the 5 built-in tools.
 func NewHandler(registry *ToolRegistry) *Handler {
-	return &Handler{
+	h := &Handler{
 		registry:      registry,
 		manifestStore: NewManifestStore(),
+		runners:       make(map[string]Runner),
 	}
+
+	// Register driver runners
+	br := NewBuiltinRunner()
+	h.RegisterRunner(string(DriverBuiltin), br)
+	h.RegisterRunner(string(DriverProcess), NewStubRunner("process"))
+	h.RegisterRunner(string(DriverHTTP), NewStubRunner("http"))
+
+	// Register 5 built-in stub handlers into the builtin runner
+	RegisterBuiltinHandlers(br)
+
+	return h
+}
+
+// RegisterRunner registers a Runner implementation for a driver type.
+// Thread-safe. Can be called at runtime to replace a stub runner with a real one.
+func (h *Handler) RegisterRunner(driver string, r Runner) {
+	h.runnersMu.Lock()
+	defer h.runnersMu.Unlock()
+	h.runners[driver] = r
+}
+
+// getRunner returns the Runner for the given driver type (read-locked).
+func (h *Handler) getRunner(driver string) (Runner, bool) {
+	h.runnersMu.RLock()
+	defer h.runnersMu.RUnlock()
+	r, ok := h.runners[driver]
+	return r, ok
 }
 
 // RegisterTool registers a new tool definition.
@@ -77,15 +111,17 @@ func (h *Handler) GetToolStatus(ctx context.Context, req *gogentv1.GetToolStatus
 
 // ExecuteTool implements the bidirectional streaming execution RPC.
 //
-// v0.12.1 minimal implementation:
+// Pipeline (v0.12.3):
 //  1. Wait for ToolExecuteRequest (first message)
 //  2. Look up tool in registry
 //  3. Send AuthResult (passed/failed)
-//  4. Send ToolResult (not-yet-implemented)
-//  5. Close stream
+//  4. Dispatch to driver-specific Runner.Execute
+//  5. Send ToolResult
+//  6. RecordInvocation(success/failure)
+//  7. Close stream
 //
 // Future versions will add HookInvocation↔HookVerdict and
-// SandboxInvocation↔SandboxResult exchange before ToolResult.
+// SandboxInvocation↔SandboxResult exchange between steps 3 and 4.
 func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) error {
 	// 1. First message must be ToolExecuteRequest
 	firstMsg, err := stream.Recv()
@@ -123,25 +159,45 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		},
 	})
 
-	// 4. Send result (v0.12.1: no actual execution capability yet)
+	// 4. Extract params and dispatch to driver-specific Runner
+	params := req.Params.AsMap()
+	var execResult Result
+	runner, ok := h.getRunner(def.Driver)
+	if !ok {
+		execResult = Result{IsError: true, ErrorMsg: "unknown driver: " + def.Driver}
+	} else {
+		var execErr error
+		execResult, execErr = runner.Execute(stream.Context(), def, params)
+		if execErr != nil {
+			execResult = Result{IsError: true, ErrorMsg: def.Name + ": " + execErr.Error()}
+		}
+	}
+
+	// 5. Send result
+	var pbOutput *structpb.Value
+	if execResult.Output != nil {
+		pbOutput, err = structpb.NewValue(execResult.Output)
+		if err != nil {
+			pbOutput = structpb.NewStringValue("")
+		}
+	}
 	stream.Send(&gogentv1.ToolExecutionEvent{
 		Sequence: 2,
 		Event: &gogentv1.ToolExecutionEvent_Result{
 			Result: &gogentv1.ToolResult{
-				IsError:  true,
-				ErrorMsg: "tool " + req.ToolName + " (" + def.Driver + "): execution not yet implemented in v0.12.1",
+				Output:   pbOutput,
+				IsError:  execResult.IsError,
+				ErrorMsg: execResult.ErrorMsg,
 			},
 		},
 	})
 
-	h.registry.RecordInvocation(req.ToolName, false)
+	// 6. Record invocation
+	h.registry.RecordInvocation(req.ToolName, !execResult.IsError)
 	return nil
 }
 
 // RegisterManifest validates and stores an app's tool manifest.
-// Each tool is checked against the registry: tool must exist and securityLevel
-// is auto-clamped to defaultLevel if below it. Rejected tools don't block
-// accepted ones — the app operates with a partial toolset.
 func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRequest) (*gogentv1.ManifestResponse, error) {
 	if req.AppName == "" {
 		return &gogentv1.ManifestResponse{
