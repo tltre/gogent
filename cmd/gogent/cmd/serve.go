@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var serveAgentPort string
@@ -25,7 +25,7 @@ func init() {
 // serveAgent attempts to load the app through the daemon. If no daemon is
 // running it auto-starts one.
 func serveAgent(configPath string, mgmtPort string) error {
-	client, err := mgmt.EnsureDaemon(mgmtPort)
+	client, err := daemon.EnsureDaemon(mgmtPort)
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
 	}

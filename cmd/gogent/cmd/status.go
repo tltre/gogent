@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/tltre/gogent/internal/daemon"
 	"github.com/tltre/gogent/internal/mgmt"
 )
 
@@ -19,7 +20,7 @@ With a name argument, shows the component table for the specified app.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 
 		if len(args) == 0 {
 			// Try daemon first
@@ -39,7 +40,8 @@ With a name argument, shows the component table for the specified app.`,
 			}
 
 			// Fallback: direct agent query (no daemon)
-			comps, err := client.Registry()
+			appClient := mgmt.NewAppClient(mgmtPort)
+			comps, err := appClient.Registry()
 			if err != nil {
 				return fmt.Errorf("connect: %w (is agent running on %s?)", err, mgmtPort)
 			}
@@ -63,7 +65,7 @@ With a name argument, shows the component table for the specified app.`,
 			return fmt.Errorf("app %q not found: %w", args[0], err)
 		}
 
-		appClient := mgmt.NewClient(info.Port)
+		appClient := mgmt.NewAppClient(info.Port)
 		comps, err := appClient.Registry()
 		if err != nil {
 			return fmt.Errorf("connect to %s (%s): %w", info.Name, info.Port, err)

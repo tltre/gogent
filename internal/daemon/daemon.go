@@ -1,4 +1,4 @@
-package mgmt
+package daemon
 
 import (
 	"context"
@@ -11,10 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tltre/gogent/internal/api"
 	"github.com/tltre/gogent/pkg/component"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,15 +68,14 @@ func (d *Daemon) RecoverApps() {
 			continue
 		}
 
-		// Verify HTTP endpoint is responsive.
-		client := NewClient(pf.Port)
-		if err := client.Ping(); err != nil {
+		// Verify HTTP endpoint is responsive (agent's mgmt server).
+		if err := pingApp(pf.Port); err != nil {
 			RemoveAppPortFile(pf.Name)
 			continue
 		}
 
 		// Re-register. ConfigPath and StartedAt are lost after a daemon crash.
-		info := &AppInfo{
+		info := &api.AppInfo{
 			Name:   pf.Name,
 			Port:   pf.Port,
 			PID:    pf.PID,
@@ -118,13 +115,13 @@ func (d *Daemon) GRPCHealthCheck(target string) error {
 	return d.grpcHealthCheck(target)
 }
 
-// ListApps returns a slice of all registered AppInfo entries.
-func (d *Daemon) ListApps() []AppInfo {
+// ListApps returns a slice of all registered api.AppInfo entries.
+func (d *Daemon) ListApps() []api.AppInfo {
 	return d.store.List()
 }
 
-// GetApp retrieves an app by name. Returns the AppInfo and true if found.
-func (d *Daemon) GetApp(name string) (*AppInfo, bool) {
+// GetApp retrieves an app by name. Returns the api.AppInfo and true if found.
+func (d *Daemon) GetApp(name string) (*api.AppInfo, bool) {
 	return d.store.Get(name)
 }
 
@@ -241,8 +238,8 @@ type spawnedComp struct {
 // LoadApp reads the YAML config at configPath, parses the component list,
 // forks singleton components (provider, memory, contextmanager, agentcore)
 // and the shared ToolService, injects environment variables pointing to them,
-// then forks the App child process. Returns the AppInfo on success.
-func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo, error) {
+// then forks the App child process. Returns the api.AppInfo on success.
+func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*api.AppInfo, error) {
 	// 1. Read and parse YAML config.
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -305,7 +302,7 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 		if cc.Driver != string(component.DriverProcess) {
 			// Non-process driver — register in ComponentStore for monitoring (no fork needed).
 			if _, exists := d.compStore.Get(compName); !exists {
-				info := &ComponentInfo{
+				info := &api.ComponentInfo{
 					Name:    compName,
 					AppName: cfg.Name,
 					Type:    compType,
@@ -378,7 +375,7 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 		}
 
 		// Register in ComponentStore.
-		info := &ComponentInfo{
+		info := &api.ComponentInfo{
 			Name:    compName,
 			AppName: cfg.Name,
 			Type:    compType,
@@ -467,7 +464,6 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 		pid = proc.Pid
 
 		// 6. Wait for agent to become healthy (max 10s, 200ms interval).
-		client := NewClient(":" + portStr)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
@@ -483,7 +479,7 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 				cleanup()
 				return nil, fmt.Errorf("agent %s did not become healthy within 10s", cfg.Name)
 			case <-ticker.C:
-				if err := client.Ping(); err == nil {
+				if err := pingApp(":" + portStr); err == nil {
 					ready = true
 				}
 			}
@@ -493,9 +489,9 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 		d.releasePort(port)
 	}
 
-	// 7. Create AppInfo and register in store.
+	// 7. Create api.AppInfo and register in store.
 	now := time.Now().Unix()
-	info := &AppInfo{
+	info := &api.AppInfo{
 		Name:       cfg.Name,
 		Port:       ":" + portStr,
 		PID:        pid,
@@ -516,56 +512,7 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo,
 		return nil, fmt.Errorf("register app: %w", err)
 	}
 
-	// Note: the agent process writes its own port file (agent.go:62) with the
-	// correct PID. Do NOT write it here with the daemon's PID — it would
-	// break crash recovery (RecoverApps would see the daemon PID as dead).
-
 	return info, nil
-}
-
-// waitForComponentHealth dials the gRPC target and polls the health check
-// until SERVING or timeout.
-func (d *Daemon) waitForComponentHealth(target string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("component %s did not become healthy within %v", target, timeout)
-		case <-ticker.C:
-			if err := d.grpcHealthCheck(target); err == nil {
-				return nil
-			}
-		}
-	}
-}
-
-// grpcHealthCheck performs a one-shot gRPC health check against the target.
-func (d *Daemon) grpcHealthCheck(target string) error {
-	conn, err := grpc.NewClient(target,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	hc := grpc_health_v1.NewHealthClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	resp, err := hc.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-	if err != nil {
-		return err
-	}
-	if resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
-		return fmt.Errorf("status %s", resp.Status.String())
-	}
-	return nil
 }
 
 // StopApp stops a running app by name. It kills the app process, then
@@ -580,7 +527,7 @@ func (d *Daemon) StopApp(name string) error {
 
 	// Read the real PID from the agent's port file.
 	// In-process agents (gogent run) are registered with PID=0
-	// but write the real PID via mgmt.Listen → WriteAppPortFile.
+	// but write the real PID via Listen → WriteAppPortFile.
 	if pf, err := ReadAppPortFile(name); err == nil && pf.PID > 0 {
 		info.PID = pf.PID
 	}
@@ -643,328 +590,8 @@ func (d *Daemon) StopApp(name string) error {
 	return nil
 }
 
-// RestartApp stops a running app and then reloads it using its original
-// config path. Returns the new AppInfo on success.
-func (d *Daemon) RestartApp(name string) (*AppInfo, error) {
-	info, exists := d.store.Get(name)
-	if !exists {
-		return nil, fmt.Errorf("app %s not found", name)
-	}
-	configPath := info.ConfigPath
-
-	if err := d.StopApp(name); err != nil {
-		return nil, fmt.Errorf("stop for restart: %w", err)
-	}
-
-	return d.LoadApp(configPath, true)
-}
-
-// parsePortFromTarget extracts the port number from a target string like
-// "localhost:54321". Returns 0 if parsing fails.
-func parsePortFromTarget(target string) int {
-	parts := strings.Split(target, ":")
-	if len(parts) < 2 {
-		return 0
-	}
-	port, _ := strconv.Atoi(parts[len(parts)-1])
-	return port
-}
-
-// StartHealthCheck launches a background goroutine that periodically checks
-// whether managed app processes are still alive. If interval is zero or
-// negative, a default of 10 seconds is used. The goroutine exits when ctx
-// is cancelled.
-func (d *Daemon) StartHealthCheck(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		interval = 10 * time.Second
-	}
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				d.runHealthCheck()
-			}
-		}
-	}()
-}
-
-// runHealthCheck iterates over all registered apps and checks their health.
-// When an app is detected as stopped, its component processes are also
-// cleaned up (killed, unregistered, port files removed).
-func (d *Daemon) runHealthCheck() {
-	apps := d.store.List()
-	for _, info := range apps {
-		// Resolve real PID from port file when daemon only has PID=0
-		// (in-process agents register via LoadApp with needForkApplication=false).
-		if info.PID <= 0 {
-			if pf, err := ReadAppPortFile(info.Name); err == nil && pf.PID > 0 {
-				d.store.UpdatePID(info.Name, pf.PID)
-				info.PID = pf.PID
-			}
-		}
-
-		if !d.isProcessAlive(info.PID) {
-			// Process no longer alive – mark as stopped and clean up.
-			// Only act on first detection; subsequent cycles skip already-stopped apps.
-			if info.Status != "stopped" {
-				fmt.Fprintf(os.Stderr, "[daemon] app %s stopped (pid %d no longer alive)\n", info.Name, info.PID)
-				d.store.UpdateStatus(info.Name, "stopped")
-				RemoveAppPortFile(info.Name)
-				d.cleanupAppComponents(info.Name)
-			}
-		} else {
-			// Best-effort health endpoint check with short timeout.
-			d.tryHealthEndpoint(info.Port)
-		}
-	}
-}
-
-// cleanupAppComponents uses the bidirectional App→Component mapping to
-// remove an app from each component's Apps list. When no more apps use a
-// component, the component process is killed and unregistered.
-func (d *Daemon) cleanupAppComponents(appName string) {
-	info, exists := d.store.Get(appName)
-	if !exists {
-		// Fallback: use ListByApp for backward compatibility.
-		comps := d.compStore.ListByApp(appName)
-		for _, comp := range comps {
-			if comp.PID > 0 {
-				if err := d.killProcess(comp.PID); err != nil {
-					fmt.Fprintf(os.Stderr, "[daemon] warn: kill component %s (pid %d): %v\n",
-						comp.Name, comp.PID, err)
-				}
-			}
-			d.compStore.Unregister(comp.Name)
-			RemoveComponentPortFile(appName, comp.Name)
-		}
-		return
-	}
-
-	for _, compName := range info.Components {
-		compInfo, ok := d.compStore.Get(compName)
-		if !ok {
-			continue
-		}
-		remaining := d.compStore.RemoveApp(compName, appName)
-		if remaining == 0 {
-			// No more apps using this component — shut it down.
-			if compInfo.Driver == component.DriverProcess && compInfo.PID > 0 {
-				if err := d.killProcess(compInfo.PID); err != nil {
-					fmt.Fprintf(os.Stderr, "[daemon] warn: kill component %s (pid %d): %v\n",
-						compName, compInfo.PID, err)
-				}
-				d.releasePort(parsePortFromTarget(compInfo.Target))
-			}
-			d.compStore.Unregister(compName)
-			RemoveComponentPortFile(appName, compName)
-		}
-	}
-}
-
-// tryHealthEndpoint performs a best-effort ping to the app's health endpoint.
-// Uses a short timeout and never blocks the health check loop.
-func (d *Daemon) tryHealthEndpoint(port string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1"+port+"/api/v1/info", nil)
-	if err != nil {
-		return
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return
-	}
-	resp.Body.Close()
-}
-
-// ---------------------------------------------------------------------------
-// Component health check (v0.9 — separate goroutine from app health check)
-// ---------------------------------------------------------------------------
-
-// StartComponentHealthCheck launches a background goroutine that periodically
-// checks whether managed component processes are still alive and responsive.
-// For process-driver components: checks PID liveness, then gRPC health ping.
-// If dead/unreachable, attempts auto-restart (max 3 retries). Default interval
-// is 15 seconds. The goroutine exits when ctx is cancelled.
-func (d *Daemon) StartComponentHealthCheck(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		interval = 15 * time.Second
-	}
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				d.runComponentHealthCheck()
-			}
-		}
-	}()
-}
-
-// runComponentHealthCheck iterates over all registered components and checks
-// their health. Behavior varies by driver type:
-//   - process: PID liveness + gRPC health ping; dead → auto-restart (max 3 retries)
-//   - http: gRPC health ping (no PID check); unreachable → mark "error"
-//   - native: status stays "running" (App healthy = component healthy)
-//
-// Components with status "error" are skipped (retries exhausted).
-func (d *Daemon) runComponentHealthCheck() {
-	comps := d.compStore.List()
-	for _, info := range comps {
-		// Skip components that have exceeded retry limits.
-		if info.Status == "error" {
-			continue
-		}
-
-		switch info.Driver {
-		case component.DriverProcess:
-			if info.PID == 0 {
-				continue
-			}
-			alive := d.isProcessAlive(info.PID)
-			if alive {
-				if err := d.grpcHealthCheck(info.Target); err != nil {
-					fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) gRPC health failed: %v — restarting\n",
-						info.Name, info.PID, err)
-					d.killProcess(info.PID)
-					alive = false
-				}
-			}
-			if !alive {
-				fmt.Fprintf(os.Stderr, "[daemon] component %s (pid %d) is dead — attempting restart\n",
-					info.Name, info.PID)
-				if err := d.restartComponent(&info); err != nil {
-					fmt.Fprintf(os.Stderr, "[daemon] component %s restart failed: %v\n", info.Name, err)
-				}
-			}
-
-		case component.DriverHTTP:
-			// gRPC health check (no PID check) — mark as "error" if unreachable.
-			if info.Target == "" {
-				continue
-			}
-			if err := d.grpcHealthCheck(info.Target); err != nil {
-				fmt.Fprintf(os.Stderr, "[daemon] component %s http health failed: %v\n",
-					info.Name, err)
-				d.compStore.UpdateStatus(info.Name, "error")
-			}
-
-		case component.DriverNative:
-			// Native components are tied to App lifecycle — status stays "running".
-			// No independent health check possible.
-		}
-	}
-}
-
-// restartComponent attempts to restart a dead component process. It tracks
-// retry count per component name. Max 3 retries within a 30-second window.
-// If retries are exhausted, sets the component status to "error".
-//
-// On success: re-forks with same config, waits for gRPC health, updates
-// ComponentStore with new PID.
-func (d *Daemon) restartComponent(info *ComponentInfo) error {
-	name := info.Name
-
-	d.compRetryMu.Lock()
-	count := d.compRetryCount[name]
-	firstAttempt, hasFirst := d.compRetryFirstAttempt[name]
-	now := time.Now()
-
-	// Reset retry window if 30s have elapsed since first attempt.
-	if hasFirst && now.Sub(firstAttempt) > 30*time.Second {
-		count = 0
-		delete(d.compRetryFirstAttempt, name)
-	}
-
-	if count >= 3 {
-		d.compRetryMu.Unlock()
-		// Update status to "error" and stop trying.
-		d.compStore.UpdateStatus(name, "error")
-		return fmt.Errorf("component %s exceeded max retries (3) — marked as error", name)
-	}
-
-	count++
-	if !hasFirst || now.Sub(firstAttempt) > 30*time.Second {
-		d.compRetryFirstAttempt[name] = now
-	}
-	d.compRetryCount[name] = count
-	d.compRetryMu.Unlock()
-
-	// Remove old port file (daemon writes a new one on success).
-	RemoveComponentPortFile(info.AppName, info.Name)
-
-	// Re-fork with same target port and type.
-	portNum := 0
-	if info.Target != "" {
-		// Parse port from "localhost:XXXX"
-		parts := strings.Split(info.Target, ":")
-		if len(parts) >= 2 {
-			portNum, _ = strconv.Atoi(parts[len(parts)-1])
-		}
-	}
-	if portNum == 0 {
-		return fmt.Errorf("cannot determine port for component %s from target %q", name, info.Target)
-	}
-
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("get executable path: %w", err)
-	}
-
-	attr := &os.ProcAttr{
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-	}
-	proc, err := os.StartProcess(exePath, []string{
-		exePath, "component", "--name", info.Name, "--port", strconv.Itoa(portNum), "--type", info.Type,
-	}, attr)
-	if err != nil {
-		return fmt.Errorf("re-fork component %s: %w", name, err)
-	}
-
-	fmt.Fprintf(os.Stderr, "[daemon] restarting component %s (attempt %d/3)\n", name, count)
-
-	// Wait for gRPC health check (max 10s).
-	if err := d.waitForComponentHealth(info.Target, 10*time.Second); err != nil {
-		d.killProcess(proc.Pid)
-		return fmt.Errorf("component %s health check after restart: %w", name, err)
-	}
-
-	// Update ComponentStore with new PID and status.
-	d.compStore.UpdatePID(name, proc.Pid)
-	d.compStore.UpdateStatus(name, "running")
-
-	// Write new port file with the restarted component process PID.
-	if err := WriteComponentPortFile(info.AppName, info.Name, ":"+strconv.Itoa(portNum), proc.Pid); err != nil {
-		fmt.Fprintf(os.Stderr, "[daemon] warn: write port file for %s: %v\n", name, err)
-	}
-
-	// Reset retry count on success.
-	d.compRetryMu.Lock()
-	delete(d.compRetryCount, name)
-	delete(d.compRetryFirstAttempt, name)
-	d.compRetryMu.Unlock()
-
-	fmt.Fprintf(os.Stderr, "[daemon] component %s restarted successfully (new pid %d)\n", name, proc.Pid)
-	return nil
-}
-
-// Shutdown gracefully stops all managed apps and their components. It iterates
-// over all registered apps, sends a termination signal to each process,
-// unregisters them from the store, removes port files, and cleans up component
-// processes. Errors are aggregated and returned.
+// Shutdown gracefully stops all managed apps and cleans up. Used when the
+// daemon process itself is shutting down.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	apps := d.store.List()
 	var errs []error
@@ -1000,4 +627,44 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("shutdown errors: %v", errs)
 	}
 	return nil
+}
+
+// RestartApp stops a running app and then reloads it using its original
+// config path. Returns the new api.AppInfo on success.
+func (d *Daemon) RestartApp(name string) (*api.AppInfo, error) {
+	info, exists := d.store.Get(name)
+	if !exists {
+		return nil, fmt.Errorf("app %s not found", name)
+	}
+	configPath := info.ConfigPath
+
+	if err := d.StopApp(name); err != nil {
+		return nil, fmt.Errorf("stop for restart: %w", err)
+	}
+
+	return d.LoadApp(configPath, true)
+}
+
+// pingApp performs a lightweight HTTP GET against an agent's app-info endpoint.
+// Used by RecoverApps and LoadApp to verify an agent is responsive.
+func pingApp(port string) error {
+	url := "http://127.0.0.1" + port + api.PathAppInfo
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// parsePortFromTarget extracts the port number from a target string like
+// "localhost:54321". Returns 0 if parsing fails.
+func parsePortFromTarget(target string) int {
+	parts := strings.Split(target, ":")
+	if len(parts) < 2 {
+		return 0
+	}
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	return port
 }

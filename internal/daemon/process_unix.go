@@ -1,6 +1,6 @@
 //go:build !windows
 
-package mgmt
+package daemon
 
 import (
 	"os/exec"

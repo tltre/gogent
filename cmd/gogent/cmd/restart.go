@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var restartCmd = &cobra.Command{
@@ -15,7 +15,7 @@ var restartCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 
 		// Look up current app info to read its config_path
 		appInfo, err := client.AppStatus(name)

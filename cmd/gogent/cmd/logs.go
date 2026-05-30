@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tltre/gogent/internal/daemon"
 	"github.com/tltre/gogent/internal/mgmt"
 )
 
@@ -18,7 +19,7 @@ var logsCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 
 		// Determine the target app port
 		targetPort := mgmtPort
@@ -48,7 +49,7 @@ var logsCmd = &cobra.Command{
 			// err != nil (no daemon) → fall through, use mgmtPort directly
 		}
 
-		target := mgmt.NewClient(targetPort)
+		target := mgmt.NewAppClient(targetPort)
 
 		var ctx context.Context
 		if follow {

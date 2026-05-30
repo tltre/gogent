@@ -1,4 +1,4 @@
-package mgmt
+package daemon
 
 import (
 	"fmt"
@@ -7,16 +7,18 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/tltre/gogent/internal/api"
 )
 
 // EnsureDaemon detects or starts the daemon process and returns a connected
 // Client pointing to the daemon's HTTP API.
-func EnsureDaemon(mgmtPort string) (*Client, error) {
+func EnsureDaemon(mgmtPort string) (*DaemonClient, error) {
 	daemonPort, err := detectOrStartDaemon(mgmtPort)
 	if err != nil {
 		return nil, fmt.Errorf("daemon unavailable: %w", err)
 	}
-	return NewClient(daemonPort), nil
+	return NewDaemonClient(daemonPort), nil
 }
 
 // detectOrStartDaemon tries to find a running daemon via the port file, then
@@ -25,7 +27,7 @@ func EnsureDaemon(mgmtPort string) (*Client, error) {
 func detectOrStartDaemon(mgmtPort string) (string, error) {
 	// 1. Try to read the daemon port file.
 	if pf, err := ReadDaemonPortFile(); err == nil {
-		c := NewClient(pf.Port)
+		c := NewDaemonClient(pf.Port)
 		if err := c.Ping(); err == nil {
 			return pf.Port, nil
 		}
@@ -70,10 +72,10 @@ func startDaemonBackground(daemonPort string) error {
 	return nil
 }
 
-// waitForDaemon polls the daemon's /api/v1/info endpoint until it responds
+// waitForDaemon polls the daemon's info endpoint until it responds
 // successfully or the timeout elapses.
 func waitForDaemon(daemonPort string, timeout time.Duration) error {
-	url := "http://127.0.0.1" + daemonPort + "/api/v1/info"
+	url := "http://127.0.0.1" + daemonPort + api.PathDaemonInfo
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 
 	deadline := time.Now().Add(timeout)
@@ -87,5 +89,5 @@ func waitForDaemon(daemonPort string, timeout time.Duration) error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	return fmt.Errorf("daemon did not start within %v", timeout)
+	return fmt.Errorf("daemon not ready within %v", timeout)
 }

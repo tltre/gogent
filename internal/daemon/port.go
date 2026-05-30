@@ -1,4 +1,4 @@
-package mgmt
+package daemon
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// PortFile represents the JSON content of a .port or .pid file.
 type PortFile struct {
 	PID  int    `json:"pid"`
 	Port string `json:"port"`
@@ -106,11 +107,10 @@ func ReadAppPortFile(name string) (*PortFile, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("read app port file: cannot determine home directory")
 	}
-	filename := name + ".port"
-	path := filepath.Join(dir, filename)
+	path := filepath.Join(dir, name+".port")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("no app port file for %q (no %s found)", name, filename)
+		return nil, fmt.Errorf("app %s not running: %w", name, err)
 	}
 	var pf PortFile
 	if err := json.Unmarshal(data, &pf); err != nil {
@@ -119,44 +119,7 @@ func ReadAppPortFile(name string) (*PortFile, error) {
 	return &pf, nil
 }
 
-// ListAppPortFiles scans ~/.gogent/ for all *.port files (excluding
-// daemon.pid) and returns their parsed PortFile contents.
-func ListAppPortFiles() ([]PortFile, error) {
-	dir := gogentDir()
-	if dir == "" {
-		return nil, fmt.Errorf("list app port files: cannot determine home directory")
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("list app port files: %w", err)
-	}
-	var result []PortFile
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if filepath.Ext(name) != ".port" {
-			continue
-		}
-		// Skip daemon.pid (named with .pid but safety check)
-		if name == "daemon.pid" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			continue // skip unreadable
-		}
-		var pf PortFile
-		if err := json.Unmarshal(data, &pf); err != nil {
-			continue // skip corrupt
-		}
-		result = append(result, pf)
-	}
-	return result, nil
-}
-
-// RemoveAppPortFile removes <name>.port from ~/.gogent/.
+// RemoveAppPortFile removes an app-level port file from ~/.gogent/.
 func RemoveAppPortFile(name string) {
 	dir := gogentDir()
 	if dir == "" {
@@ -165,12 +128,49 @@ func RemoveAppPortFile(name string) {
 	os.Remove(filepath.Join(dir, name+".port"))
 }
 
+// ListAppPortFiles scans ~/.gogent/ for all port files and returns their names.
+func ListAppPortFiles() ([]PortFile, error) {
+	dir := gogentDir()
+	if dir == "" {
+		return nil, fmt.Errorf("cannot determine home directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var result []PortFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".port") {
+			if e.Name() != "daemon.pid" {
+				continue
+			}
+		}
+		name := strings.TrimSuffix(e.Name(), ".port")
+		name = strings.TrimSuffix(name, ".pid")
+		if name == "daemon" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var pf PortFile
+		if err := json.Unmarshal(data, &pf); err != nil {
+			continue
+		}
+		result = append(result, pf)
+	}
+	return result, nil
+}
+
 // ---------------------------------------------------------------------------
-// Per-component port files (~/.gogent/<appName>.<compName>.port)
+// Per-component port files (~/.gogent/<app_name>.<comp_name>.port)
 // ---------------------------------------------------------------------------
 
-// WriteComponentPortFile writes a component-level port file to
-// ~/.gogent/<appName>.<compName>.port.
+// WriteComponentPortFile writes a component-level port file.
 func WriteComponentPortFile(appName, compName, port string, pid int) error {
 	dir := gogentDir()
 	if dir == "" {
@@ -190,8 +190,7 @@ func WriteComponentPortFile(appName, compName, port string, pid int) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// ReadComponentPortFile reads a component-level port file from
-// ~/.gogent/<appName>.<compName>.port.
+// ReadComponentPortFile reads a specific component port file.
 func ReadComponentPortFile(appName, compName string) (*PortFile, error) {
 	dir := gogentDir()
 	if dir == "" {
@@ -201,7 +200,7 @@ func ReadComponentPortFile(appName, compName string) (*PortFile, error) {
 	path := filepath.Join(dir, filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("no component port file for %s/%s (no %s found)", appName, compName, filename)
+		return nil, fmt.Errorf("read component port file %s: %w", filename, err)
 	}
 	var pf PortFile
 	if err := json.Unmarshal(data, &pf); err != nil {
@@ -210,52 +209,48 @@ func ReadComponentPortFile(appName, compName string) (*PortFile, error) {
 	return &pf, nil
 }
 
-// RemoveComponentPortFile removes <appName>.<compName>.port from ~/.gogent/.
+// RemoveComponentPortFile removes a component-level port file.
 func RemoveComponentPortFile(appName, compName string) {
 	dir := gogentDir()
 	if dir == "" {
 		return
 	}
-	os.Remove(filepath.Join(dir, appName+"."+compName+".port"))
+	filename := appName + "." + compName + ".port"
+	os.Remove(filepath.Join(dir, filename))
 }
 
-// ListComponentPortFiles scans ~/.gogent/ for all component-level port files
-// (files matching *.*.port — two dots). App-level *.port (one dot) and
-// daemon.pid are excluded.
-func ListComponentPortFiles() ([]PortFile, error) {
+// ListComponentPortFiles scans ~/.gogent/ for component port files matching
+// the given appName.
+func ListComponentPortFiles(appName string) ([]PortFile, error) {
 	dir := gogentDir()
 	if dir == "" {
-		return nil, fmt.Errorf("list component port files: cannot determine home directory")
+		return nil, fmt.Errorf("cannot determine home directory")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("list component port files: %w", err)
+		return nil, err
 	}
+	prefix := appName + "."
 	var result []PortFile
-	for _, entry := range entries {
-		if entry.IsDir() {
+	for _, e := range entries {
+		if e.IsDir() {
 			continue
 		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".port") {
+		if !strings.HasSuffix(e.Name(), ".port") {
 			continue
 		}
-		// Component-level files have two dots: <app>.<comp>.port
-		// App-level files have one dot:  <app>.port — skip those.
-		if strings.Count(name, ".") < 2 {
+		if !strings.HasPrefix(e.Name(), prefix) {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
-			continue // skip unreadable
+			continue
 		}
 		var pf PortFile
 		if err := json.Unmarshal(data, &pf); err != nil {
-			continue // skip corrupt
+			continue
 		}
 		result = append(result, pf)
 	}
 	return result, nil
 }
-
-

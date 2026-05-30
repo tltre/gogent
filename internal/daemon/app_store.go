@@ -1,26 +1,27 @@
-package mgmt
+package daemon
 
 import (
 	"fmt"
 	"sync"
+
+	"github.com/tltre/gogent/internal/api"
 )
 
-// AppStore is a concurrent-safe in-memory registry for AppInfo entries.
+// AppStore is a concurrent-safe in-memory registry for api.AppInfo entries.
 type AppStore struct {
 	mu   sync.RWMutex
-	apps map[string]*AppInfo
+	apps map[string]*api.AppInfo
 }
 
 // NewAppStore creates a new empty AppStore.
 func NewAppStore() *AppStore {
 	return &AppStore{
-		apps: make(map[string]*AppInfo),
+		apps: make(map[string]*api.AppInfo),
 	}
 }
 
-// Register adds an app to the store. Returns an error if an app with the same
-// name already exists.
-func (s *AppStore) Register(info *AppInfo) error {
+// Register adds an app to the store.
+func (s *AppStore) Register(info *api.AppInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -33,8 +34,7 @@ func (s *AppStore) Register(info *AppInfo) error {
 	return nil
 }
 
-// Unregister removes an app from the store by name. Returns an error if the
-// app is not found.
+// Unregister removes an app from the store by name.
 func (s *AppStore) Unregister(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,9 +47,8 @@ func (s *AppStore) Unregister(name string) error {
 	return nil
 }
 
-// Get retrieves an app by name. Returns the AppInfo pointer and true if found,
-// or nil and false otherwise.
-func (s *AppStore) Get(name string) (*AppInfo, bool) {
+// Get retrieves an app by name.
+func (s *AppStore) Get(name string) (*api.AppInfo, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -57,21 +56,19 @@ func (s *AppStore) Get(name string) (*AppInfo, bool) {
 	return info, exists
 }
 
-// List returns a copy of all registered AppInfo entries. The returned slice is
-// safe to modify by the caller.
-func (s *AppStore) List() []AppInfo {
+// List returns a copy of all registered AppInfo entries.
+func (s *AppStore) List() []api.AppInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]AppInfo, 0, len(s.apps))
+	result := make([]api.AppInfo, 0, len(s.apps))
 	for _, info := range s.apps {
 		result = append(result, *info)
 	}
 	return result
 }
 
-// UpdateStatus updates the status field of a registered app. Returns an error
-// if the app is not found.
+// UpdateStatus updates the status field of a registered app.
 func (s *AppStore) UpdateStatus(name string, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -85,8 +82,7 @@ func (s *AppStore) UpdateStatus(name string, status string) error {
 	return nil
 }
 
-// UpdatePID updates the PID field of a registered app. Returns an error if the
-// app is not found.
+// UpdatePID updates the PID field of a registered app.
 func (s *AppStore) UpdatePID(name string, pid int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

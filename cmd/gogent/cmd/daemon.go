@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var basePort string
@@ -40,7 +40,7 @@ func runDaemon() error {
 	}
 
 	// Create daemon
-	d := mgmt.NewDaemon(bp)
+	d := daemon.NewDaemon(bp)
 
 	// Start health check to detect crashed apps (checks every 5s)
 	healthCtx, healthCancel := context.WithCancel(context.Background())
@@ -53,14 +53,14 @@ func runDaemon() error {
 	d.StartComponentHealthCheck(compHealthCtx, 15*time.Second)
 
 	// Start HTTP server (reg is nil since daemon is not a Component)
-	srv := mgmt.NewDaemonServer(port, nil, d)
+	srv := daemon.NewDaemonServer(port, d)
 	defer srv.Shutdown(context.Background())
 
 	// Write daemon port file
-	if err := mgmt.WriteDaemonPortFile(port); err != nil {
+	if err := daemon.WriteDaemonPortFile(port); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: could not write daemon port file: %v\n", err)
 	}
-	defer mgmt.RemoveDaemonPortFile()
+	defer daemon.RemoveDaemonPortFile()
 
 	fmt.Fprintf(os.Stderr, "daemon listening on %s  pid=%d\n", port, os.Getpid())
 

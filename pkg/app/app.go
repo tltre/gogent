@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tltre/gogent/internal/daemon"
 	"github.com/tltre/gogent/internal/mgmt"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/iface"
@@ -107,13 +108,13 @@ func (a *App) Run(ctx context.Context) error {
 		srv = mgmt.Listen(a.mgmtPort, a.registry)
 		defer srv.Shutdown(context.Background())
 
-		if err := mgmt.WriteAppPortFile(a.Name(), a.mgmtPort); err != nil {
+		if err := daemon.WriteAppPortFile(a.Name(), a.mgmtPort); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: write port file: %v\n", err)
 		}
 
 		// Auto-detect/start daemon when process-driver components are present.
 		if a.hasProcessDriverComponents() {
-			if _, err := mgmt.EnsureDaemon(a.mgmtPort); err != nil {
+			if _, err := daemon.EnsureDaemon(a.mgmtPort); err != nil {
 				fmt.Fprintf(os.Stderr, "warn: daemon: %v\n", err)
 			}
 		}
@@ -128,7 +129,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	// Cleanup (reverse order of setup).
 	if a.mgmtPort != "" {
-		mgmt.RemoveAppPortFile(a.Name())
+		daemon.RemoveAppPortFile(a.Name())
 	}
 
 	if stopErr := a.Stop(ctx); stopErr != nil {

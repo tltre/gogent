@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var stopCmd = &cobra.Command{
@@ -15,7 +15,7 @@ var stopCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 
 		err := client.StopApp(name)
 		if err != nil {

@@ -6,6 +6,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon"
 	"github.com/tltre/gogent/internal/mgmt"
 )
 
@@ -15,7 +17,7 @@ var doctorCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 
 		if len(args) == 0 {
 			// No args: get all component health from daemon, group by App.
@@ -38,7 +40,7 @@ var doctorCmd = &cobra.Command{
 						fmt.Println()
 					}
 					fmt.Printf("=== %s ===\n", app.Name)
-					appClient := mgmt.NewClient(app.Port)
+					appClient := mgmt.NewAppClient(app.Port)
 					results, hErr := appClient.Health()
 					if hErr != nil {
 						fmt.Printf("error: %v\n", hErr)
@@ -61,7 +63,7 @@ var doctorCmd = &cobra.Command{
 			// Fallback: try per-app health via AppStatus.
 			app, err := client.AppStatus(name)
 			if err == nil && app != nil {
-				appClient := mgmt.NewClient(app.Port)
+				appClient := mgmt.NewAppClient(app.Port)
 				results, hErr := appClient.Health()
 				if hErr != nil {
 					return fmt.Errorf("connect to app %q on port %s: %w", name, app.Port, hErr)
@@ -74,7 +76,8 @@ var doctorCmd = &cobra.Command{
 		}
 
 		// Fallback: single agent (current behavior).
-		results, err := client.Health()
+		appClient := mgmt.NewAppClient(mgmtPort)
+		results, err := appClient.Health()
 		if err != nil {
 			return fmt.Errorf("connect: %w (is agent running on %s?)", err, mgmtPort)
 		}
@@ -87,7 +90,7 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
-func printHealthTable(results []mgmt.HealthResult) {
+func printHealthTable(results []api.HealthResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "COMPONENT\tSTATUS\tLATENCY")
 	for _, r := range results {
@@ -100,7 +103,7 @@ func printHealthTable(results []mgmt.HealthResult) {
 	w.Flush()
 }
 
-func printComponentsHealthTable(results []mgmt.ComponentHealthResult) {
+func printComponentsHealthTable(results []api.ComponentHealthResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTYPE\tDRIVER\tSTATUS\tLATENCY")
 	for _, r := range results {
@@ -115,7 +118,7 @@ func printComponentsHealthTable(results []mgmt.ComponentHealthResult) {
 
 // printComponentsHealthGrouped displays component health results grouped by
 // App using the bidirectional App→Component mapping from AppInfo.
-func printComponentsHealthGrouped(results []mgmt.ComponentHealthResult, apps []mgmt.AppInfo) {
+func printComponentsHealthGrouped(results []api.ComponentHealthResult, apps []api.AppInfo) {
 	// Build component→app lookup map from AppInfo.Components.
 	compApp := make(map[string]string) // component name → app name
 	for _, app := range apps {
@@ -125,8 +128,8 @@ func printComponentsHealthGrouped(results []mgmt.ComponentHealthResult, apps []m
 	}
 
 	// Group results by app.
-	appResults := make(map[string][]mgmt.ComponentHealthResult)
-	var uncategorized []mgmt.ComponentHealthResult
+	appResults := make(map[string][]api.ComponentHealthResult)
+	var uncategorized []api.ComponentHealthResult
 	for _, r := range results {
 		if app, ok := compApp[r.Name]; ok {
 			appResults[app] = append(appResults[app], r)

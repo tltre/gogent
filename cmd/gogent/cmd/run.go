@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var tuiMode bool
@@ -29,7 +29,7 @@ func init() {
 
 func runAgent(configPath string) error {
 	// 1. Ensure daemon is running.
-	daemonClient, err := mgmt.EnsureDaemon(port)
+	daemonClient, err := daemon.EnsureDaemon(port)
 	if err != nil {
 		return fmt.Errorf("daemon: %w", err)
 	}

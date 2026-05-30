@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tltre/gogent/internal/mgmt"
+	"github.com/tltre/gogent/internal/daemon"
 )
 
 var listCmd = &cobra.Command{
@@ -15,7 +15,7 @@ var listCmd = &cobra.Command{
 	Short: "List all running agent applications",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgmtPort := resolveMgmtPort(cmd)
-		client := mgmt.NewClient(mgmtPort)
+		client := daemon.NewDaemonClient(mgmtPort)
 		apps, err := client.ListApps()
 		if err != nil {
 			return fmt.Errorf("connect: %w (is daemon running?)", err)
