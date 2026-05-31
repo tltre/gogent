@@ -195,7 +195,12 @@ func detectEditor() string {
 		}
 	}
 	if runtime.GOOS == "windows" {
-		return "notepad"
+		for _, editor := range []string{"code", "notepad++", "notepad"} {
+			if _, err := exec.LookPath(editor); err == nil {
+				return editor
+			}
+		}
+		return "notepad" // last resort, may fail if App Execution Alias is broken
 	}
 	return "vi"
 }

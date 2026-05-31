@@ -93,6 +93,95 @@ func (r *ToolRegistry) LoadFromFile(resolver *EnvResolver) error {
 	return nil
 }
 
+// WriteToolToFile writes a tool definition to tools.yaml.
+// If the tool already exists in the file, it is updated. Otherwise appended.
+func WriteToolToFile(path string, def *ToolDefinition) error {
+	if path == "" {
+		path = toolYamlPath()
+	}
+	if path == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create new file with just this tool
+			doc := toolsYaml{Tools: make(map[string]toolYamlEntry)}
+			doc.Tools[def.Name] = toYamlEntry(def)
+			out, _ := yaml.Marshal(&doc)
+			dir := filepath.Dir(path)
+			os.MkdirAll(dir, 0700)
+			return os.WriteFile(path, out, 0600)
+		}
+		return fmt.Errorf("read tools.yaml for write: %w", err)
+	}
+
+	var doc toolsYaml
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("parse tools.yaml for write: %w", err)
+	}
+	if doc.Tools == nil {
+		doc.Tools = make(map[string]toolYamlEntry)
+	}
+	doc.Tools[def.Name] = toYamlEntry(def)
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return fmt.Errorf("marshal tools.yaml: %w", err)
+	}
+	return os.WriteFile(path, out, 0600)
+}
+
+// RemoveToolFromFile deletes a tool entry from tools.yaml.
+func RemoveToolFromFile(path, name string) error {
+	if path == "" {
+		path = toolYamlPath()
+	}
+	if path == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to clean up
+		}
+		return fmt.Errorf("read tools.yaml for remove: %w", err)
+	}
+
+	var doc toolsYaml
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil // can't parse, skip cleanup
+	}
+
+	if _, exists := doc.Tools[name]; !exists {
+		return nil // no entry for this tool
+	}
+	delete(doc.Tools, name)
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return fmt.Errorf("marshal tools.yaml after remove: %w", err)
+	}
+	return os.WriteFile(path, out, 0600)
+}
+
+func toYamlEntry(def *ToolDefinition) toolYamlEntry {
+	env := def.Env
+	if len(env) == 0 {
+		env = nil
+	}
+	return toolYamlEntry{
+		Driver:      def.Driver,
+		Command:     def.Command,
+		Endpoint:    def.Endpoint,
+		DefaultLvl:  def.DefaultLvl,
+		Description: def.Description,
+		Env:         env,
+	}
+}
+
 // writeDefaults creates ~/.gogent/tools.yaml with built-in tools.
 func (r *ToolRegistry) writeDefaults(path string) error {
 	doc := toolsYaml{

@@ -120,6 +120,11 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Persist to tools.yaml so the tool survives daemon restart
+		if err := tool.WriteToolToFile("", def); err != nil {
+			fmt.Fprintf(os.Stderr, "[tool] persist error: %v\n", err)
+		}
+
 		// Write credentials to credentials.yaml (v0.12.6)
 		if len(req.Credentials) > 0 {
 			credPath := "" // use default ~/.gogent/credentials.yaml
@@ -183,9 +188,11 @@ func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Clean up credentials for this tool (v0.12.6)
+		// Clean up tools.yaml and credentials.yaml
+		if err := tool.RemoveToolFromFile("", name); err != nil {
+			fmt.Fprintf(os.Stderr, "[tool] remove from file error: %v\n", err)
+		}
 		if err := tool.RemoveCredentialsGroup("", name); err != nil {
-			// Log but don't fail the unregister
 			fmt.Fprintf(os.Stderr, "[cred] cleanup error for %q: %v\n", name, err)
 		}
 
