@@ -182,6 +182,13 @@ func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+
+		// Clean up credentials for this tool (v0.12.6)
+		if err := tool.RemoveCredentialsGroup("", name); err != nil {
+			// Log but don't fail the unregister
+			fmt.Fprintf(os.Stderr, "[cred] cleanup error for %q: %v\n", name, err)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "unregistered"})
 

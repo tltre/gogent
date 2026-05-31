@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/internal/api"
 	"github.com/tltre/gogent/internal/daemon"
+	"github.com/tltre/gogent/internal/daemon/tool"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,20 +37,41 @@ var toolRegisterCmd = &cobra.Command{
 			return fmt.Errorf("tool name is required when using flags")
 		}
 		env := parseKeyValuePairs(regEnv)
+		toolName := args[0]
 		req := &api.RegisterToolRequest{
-			Name:         args[0],
+			Name:         toolName,
 			Driver:       regDriver,
 			Command:      regCommand,
 			Endpoint:     regEndpoint,
 			DefaultLevel: regLevel,
 			Description:  regDescription,
-			Env:          env,
 		}
+
+		// Convert plaintext env values to ${tool-name.KEY} references
+		// and collect plaintext values for credentials.yaml.
+		refEnv := make(map[string]string)
+		creds := make(map[string]string)
+		for k, v := range env {
+			if tool.IsEnvVarRef(v) {
+				// Already a ${...} reference — use as-is
+				refEnv[k] = v
+			} else {
+				// Plaintext value — convert to reference + store in credentials
+				refKey := toolName + "." + k
+				refEnv[k] = tool.EnvVarRef(toolName, k)
+				creds[refKey] = v
+			}
+		}
+		req.Env = refEnv
+		if len(creds) > 0 {
+			req.Credentials = creds
+		}
+
 		client := daemon.NewDaemonClient(resolveMgmtPort(cmd))
 		if err := client.ToolRegister(req); err != nil {
 			return fmt.Errorf("register tool: %w", err)
 		}
-		fmt.Printf("tool %q registered (driver=%s, level=%d)\n", args[0], regDriver, regLevel)
+		fmt.Printf("tool %q registered (driver=%s, level=%d)\n", toolName, regDriver, regLevel)
 		return nil
 	},
 }

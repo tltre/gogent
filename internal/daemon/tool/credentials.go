@@ -151,6 +151,45 @@ func setNested(m map[string]any, key string, value string) {
 	}
 }
 
+// RemoveCredentialsGroup removes all credentials entries for a given tool name.
+// In the grouped YAML format, this removes the entire tool-name: { ... } block.
+func RemoveCredentialsGroup(path, toolName string) error {
+	if path == "" {
+		path = DefaultCredentialsPath()
+	}
+	if path == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to clean up
+		}
+		return fmt.Errorf("read credentials for remove: %w", err)
+	}
+
+	var existing map[string]any
+	if len(data) > 0 {
+		if err := yaml.Unmarshal(data, &existing); err != nil {
+			return nil // can't parse, skip cleanup
+		}
+	}
+
+	if _, exists := existing[toolName]; !exists {
+		return nil // no entries for this tool
+	}
+
+	delete(existing, toolName)
+
+	out, err := yaml.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("marshal credentials after remove: %w", err)
+	}
+
+	return os.WriteFile(path, out, 0600)
+}
+
 func splitN(s, sep string, n int) []string {
 	result := make([]string, 0, n)
 	start := 0
