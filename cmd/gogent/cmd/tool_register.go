@@ -140,7 +140,12 @@ tools:
 	tmpFile.Close()
 
 	// Launch editor
-	editorCmd := exec.Command(editor, tmpPath)
+	// VS Code needs --wait; otherwise it returns immediately before the user finishes editing.
+	editorArgs := []string{tmpPath}
+	if editor == "code" {
+		editorArgs = append([]string{"--wait"}, editorArgs...)
+	}
+	editorCmd := exec.Command(editor, editorArgs...)
 	editorCmd.Stdin = os.Stdin
 	editorCmd.Stdout = os.Stdout
 	editorCmd.Stderr = os.Stderr
