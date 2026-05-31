@@ -47,21 +47,7 @@ var toolRegisterCmd = &cobra.Command{
 			Description:  regDescription,
 		}
 
-		// Convert plaintext env values to ${tool-name.KEY} references
-		// and collect plaintext values for credentials.yaml.
-		refEnv := make(map[string]string)
-		creds := make(map[string]string)
-		for k, v := range env {
-			if tool.IsEnvVarRef(v) {
-				// Already a ${...} reference — use as-is
-				refEnv[k] = v
-			} else {
-				// Plaintext value — convert to reference + store in credentials
-				refKey := toolName + "." + k
-				refEnv[k] = tool.EnvVarRef(toolName, k)
-				creds[refKey] = v
-			}
-		}
+		refEnv, creds := convertEnv(toolName, env)
 		req.Env = refEnv
 		if len(creds) > 0 {
 			req.Credentials = creds
@@ -171,6 +157,7 @@ tools:
 	client := daemon.NewDaemonClient(resolveMgmtPort(cmd))
 	var anyErr bool
 	for _, entry := range tmplData.Tools {
+		refEnv, creds := convertEnv(entry.Name, entry.Env)
 		req := &api.RegisterToolRequest{
 			Name:         entry.Name,
 			Driver:       entry.Driver,
@@ -178,7 +165,8 @@ tools:
 			Endpoint:     entry.Endpoint,
 			DefaultLevel: entry.Level,
 			Description:  entry.Description,
-			Env:          entry.Env,
+			Env:          refEnv,
+			Credentials:  creds,
 		}
 		if err := client.ToolRegister(req); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: failed — %v\n", entry.Name, err)
@@ -208,6 +196,25 @@ func detectEditor() string {
 		return "notepad" // last resort, may fail if App Execution Alias is broken
 	}
 	return "vi"
+}
+
+// convertEnv converts plaintext env values to ${tool-name.KEY} references
+// and collects plaintext values into a credentials map.
+// Already-formatted ${...} references are left as-is.
+func convertEnv(toolName string, env map[string]string) (refEnv map[string]string, creds map[string]string) {
+	refEnv = make(map[string]string, len(env))
+	for k, v := range env {
+		if tool.IsEnvVarRef(v) {
+			refEnv[k] = v
+		} else {
+			refEnv[k] = tool.EnvVarRef(toolName, k)
+			if creds == nil {
+				creds = make(map[string]string)
+			}
+			creds[toolName+"."+k] = v
+		}
+	}
+	return
 }
 
 func parseKeyValuePairs(pairs []string) map[string]string {
