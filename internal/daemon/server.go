@@ -79,9 +79,14 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		// Return sanitized list — Env omitted for credential isolation
 		tools := s.daemon.ToolRegistry().List()
+		sanitized := make([]tool.ToolDefinition, len(tools))
+		for i, t := range tools {
+			sanitized[i] = t.Sanitized()
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tools)
+		json.NewEncoder(w).Encode(sanitized)
 
 	case http.MethodPost:
 		body, err := io.ReadAll(r.Body)
@@ -108,11 +113,20 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 			Endpoint:    req.Endpoint,
 			DefaultLvl:  req.DefaultLevel,
 			Description: req.Description,
-			Env:         req.Env,
+			Env:         req.Env, // Store raw ${VAR} references
 		}
 		if err := s.daemon.ToolRegistry().Register(def); err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
+		}
+
+		// Write credentials to credentials.yaml (v0.12.6)
+		if len(req.Credentials) > 0 {
+			credPath := "" // use default ~/.gogent/credentials.yaml
+			if err := tool.WriteCredentials(credPath, req.Credentials); err != nil {
+				// Log but don't fail the registration — the tool is already registered
+				fmt.Fprintf(os.Stderr, "[cred] write error: %v\n", err)
+			}
 		}
 
 		w.WriteHeader(http.StatusCreated)

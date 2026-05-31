@@ -53,7 +53,8 @@ func (r *ToolRegistry) LoadDefault() {
 // LoadFromFile reads ~/.gogent/tools.yaml and registers tool definitions.
 // If the file doesn't exist, it creates one with default built-in tools.
 // File entries take precedence over already-registered defaults.
-func (r *ToolRegistry) LoadFromFile() error {
+// If resolver is non-nil, env values are resolved from credentials before storage.
+func (r *ToolRegistry) LoadFromFile(resolver *EnvResolver) error {
 	path := toolYamlPath()
 	if path == "" {
 		return fmt.Errorf("cannot determine home directory")
@@ -73,6 +74,8 @@ func (r *ToolRegistry) LoadFromFile() error {
 	}
 
 	for name, entry := range doc.Tools {
+		// Registry always stores raw ${VAR} references, not resolved values.
+		// Resolution happens at execution time via EnvResolver.ResolveMap().
 		def := &ToolDefinition{
 			Name:        name,
 			Driver:      entry.Driver,

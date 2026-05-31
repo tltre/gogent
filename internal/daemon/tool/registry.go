@@ -200,6 +200,20 @@ func (r *ToolRegistry) GetStatus(name string) ToolStatus {
 	return entry.status
 }
 
+// Sanitized returns a copy of the definition with sensitive fields removed.
+// Safe for exposing to CLI/HTTP/gRPC callers. Env is deliberately omitted
+// for credential isolation.
+func (d *ToolDefinition) Sanitized() ToolDefinition {
+	return ToolDefinition{
+		Name:        d.Name,
+		Driver:      d.Driver,
+		Command:     d.Command,
+		Endpoint:    d.Endpoint,
+		DefaultLvl:  d.DefaultLvl,
+		Description: d.Description,
+	}
+}
+
 // GetSource returns the source of a registered tool ("builtin" | "user" | "file").
 func (r *ToolRegistry) GetSource(name string) ToolSource {
 	r.mu.RLock()

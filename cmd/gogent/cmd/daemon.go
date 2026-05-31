@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	basePort      string
-	foregroundMode bool
+	basePort         string
+	foregroundMode   bool
+	credentialsPath  string
 )
 
 var daemonCmd = &cobra.Command{
@@ -36,6 +37,7 @@ background; use --foreground to keep it in the current process.`,
 func init() {
 	daemonCmd.Flags().StringVar(&basePort, "base-port", "9090", "base port for agent port allocation (default 9090)")
 	daemonCmd.Flags().BoolVarP(&foregroundMode, "foreground", "F", false, "run in foreground (don't daemonize)")
+	daemonCmd.Flags().StringVar(&credentialsPath, "credentials", "", "path to credentials.yaml (default ~/.gogent/credentials.yaml)")
 }
 
 func runDaemon() error {
@@ -46,7 +48,11 @@ func runDaemon() error {
 		if err != nil {
 			return fmt.Errorf("get executable path: %w", err)
 		}
-		cmd := exec.Command(exePath, "daemon", "--foreground", "--port", port, "--base-port", basePort)
+		args := []string{"daemon", "--foreground", "--port", port, "--base-port", basePort}
+		if credentialsPath != "" {
+			args = append(args, "--credentials", credentialsPath)
+		}
+		cmd := exec.Command(exePath, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		daemon.DetachDaemon(cmd)
@@ -63,7 +69,7 @@ func runDaemon() error {
 		return fmt.Errorf("invalid --base-port value %q: %w", basePort, err)
 	}
 
-	d := daemon.NewDaemon(bp)
+	d := daemon.NewDaemon(bp, credentialsPath)
 
 	healthCtx, healthCancel := context.WithCancel(context.Background())
 	defer healthCancel()
@@ -72,6 +78,11 @@ func runDaemon() error {
 	compHealthCtx, compHealthCancel := context.WithCancel(context.Background())
 	defer compHealthCancel()
 	d.StartComponentHealthCheck(compHealthCtx, 15*time.Second)
+
+	// Start credential file watcher (v0.12.6)
+	credCtx, credCancel := context.WithCancel(context.Background())
+	defer credCancel()
+	d.StartCredentialWatch(credCtx)
 
 	d.StartGrpc()
 

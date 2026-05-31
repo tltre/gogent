@@ -112,4 +112,8 @@ type RegisterToolRequest struct {
 	DefaultLevel int               `json:"defaultLevel"`
 	Description  string            `json:"description,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`
+	// Credentials holds plaintext secret values to be written to credentials.yaml.
+	// Keys use the format "tool-name.KEY". When set, the corresponding Env entry
+	// should be a "${tool-name.KEY}" reference, not the plaintext value.
+	Credentials map[string]string `json:"credentials,omitempty"`
 }

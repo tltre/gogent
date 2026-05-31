@@ -34,6 +34,7 @@ type Daemon struct {
 	// v0.12.1: Centralized tool management.
 	toolReg       *tool.ToolRegistry   // registered tool definitions
 	manifestStore *tool.ManifestStore // per-app manifest registrations
+	resolver      *tool.EnvResolver    // v0.12.6: credential resolver
 	grpcSrv       *GrpcServer          // gRPC ToolService server
 	grpcReady     bool                 // true after StartGrpc() completes
 }
@@ -41,12 +42,28 @@ type Daemon struct {
 // NewDaemon creates a new Daemon with an empty AppStore and the given base
 // port for allocation. It scans ~/.gogent/ for surviving app instances from
 // a previous daemon crash and recovers them.
-func NewDaemon(basePort int) *Daemon {
+func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 	// Initialize tool registry with built-in tools + tools.yaml overrides.
 	toolReg := tool.NewToolRegistry()
 	toolReg.LoadDefault()
-	if err := toolReg.LoadFromFile(); err != nil {
+
+	// Load credentials (default ~/.gogent/credentials.yaml).
+	var credPath string
+	if len(credentialsPath) > 0 {
+		credPath = credentialsPath[0]
+	}
+	creds, _ := tool.LoadCredentials(credPath)
+	resolver := tool.NewEnvResolver(creds)
+
+	if err := toolReg.LoadFromFile(resolver); err != nil {
 		fmt.Fprintf(os.Stderr, "[daemon] warn: load tools.yaml: %v\n", err)
+	}
+
+	// Set up credentials file path for fsnotify watching
+	if credPath != "" {
+		resolver.SetCredentialsPath(credPath)
+	} else if p := tool.DefaultCredentialsPath(); p != "" {
+		resolver.SetCredentialsPath(p)
 	}
 
 	d := &Daemon{
@@ -58,6 +75,7 @@ func NewDaemon(basePort int) *Daemon {
 		compRetryFirstAttempt: make(map[string]time.Time),
 		toolReg:               toolReg,
 		manifestStore:         tool.NewManifestStore(),
+		resolver:              resolver,
 	}
 	d.RecoverApps()
 	return d
@@ -135,11 +153,29 @@ func (d *Daemon) ManifestStore() *tool.ManifestStore {
 	return d.manifestStore
 }
 
+// Resolver returns the daemon's credential resolver (v0.12.6).
+func (d *Daemon) Resolver() *tool.EnvResolver {
+	return d.resolver
+}
+
+// StartCredentialWatch starts the fsnotify credential watcher in a goroutine.
+// The watcher reloads credentials.yaml on changes.
+func (d *Daemon) StartCredentialWatch(ctx context.Context) {
+	if d.resolver == nil {
+		return
+	}
+	go func() {
+		if err := d.resolver.Watch(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "[daemon] credential watch ended: %v\n", err)
+		}
+	}()
+}
+
 // StartGrpc initializes and starts the gRPC server for ToolService.
 // The gRPC port is basePort+1. This is called explicitly from runDaemon
 // after other subsystems are ready.
 func (d *Daemon) StartGrpc() {
-		d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore)
+	d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore, d.resolver)
 	if d.grpcSrv != nil {
 		d.grpcSrv.Start()
 		d.grpcReady = true
