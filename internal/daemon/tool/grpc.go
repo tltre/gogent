@@ -2,7 +2,9 @@ package tool
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -111,18 +113,19 @@ func (h *Handler) GetToolStatus(ctx context.Context, req *gogentv1.GetToolStatus
 
 // ExecuteTool implements the bidirectional streaming execution RPC.
 //
-// Pipeline (v0.12.3):
+// Pipeline (v0.12.9):
 //  1. Wait for ToolExecuteRequest (first message)
 //  2. Look up tool in registry
 //  3. Send AuthResult (passed/failed)
-//  4. Dispatch to driver-specific Runner.Execute
-//  5. Send ToolResult
-//  6. RecordInvocation(success/failure)
-//  7. Close stream
-//
-// Future versions will add HookInvocation↔HookVerdict and
-// SandboxInvocation↔SandboxResult exchange between steps 3 and 4.
+//  4. Send HookInvocation (pre_execute) → wait for HookVerdict
+//  5. Dispatch to driver-specific Runner.Execute
+//  6. Send HookInvocation (post_execute) → wait for HookVerdict (can modify output)
+//  7. Send ToolResult
+//  8. RecordInvocation(success/failure)
+//  9. Close stream
 func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) error {
+	seq := int64(0)
+
 	// 1. First message must be ToolExecuteRequest
 	firstMsg, err := stream.Recv()
 	if err != nil {
@@ -136,8 +139,9 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 	// 2. Look up tool in registry
 	def, exists := h.registry.Get(req.ToolName)
 	if !exists {
+		seq++
 		stream.Send(&gogentv1.ToolExecutionEvent{
-			Sequence: 1,
+			Sequence: seq,
 			Event: &gogentv1.ToolExecutionEvent_Auth{
 				Auth: &gogentv1.AuthResult{
 					Passed: false,
@@ -149,8 +153,9 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 	}
 
 	// 3. Send auth result
+	seq++
 	stream.Send(&gogentv1.ToolExecutionEvent{
-		Sequence: 1,
+		Sequence: seq,
 		Event: &gogentv1.ToolExecutionEvent_Auth{
 			Auth: &gogentv1.AuthResult{
 				Passed:         true,
@@ -159,8 +164,16 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		},
 	})
 
-	// 4. Extract params and dispatch to driver-specific Runner
+	// 4. Pre-execute hook
 	params := req.Params.AsMap()
+	seq++
+	blocked := h.handleHook(stream, seq, "pre_execute", req.ToolName, params)
+	if blocked {
+		h.registry.RecordInvocation(req.ToolName, false)
+		return nil // hook already sent the error result
+	}
+
+	// 5. Extract params and dispatch to driver-specific Runner
 	var execResult Result
 	runner, ok := h.getRunner(def.Driver)
 	if !ok {
@@ -173,7 +186,12 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		}
 	}
 
-	// 5. Send result
+	// 6. Post-execute hook (can modify output)
+	seq++
+	h.handlePostHook(stream, seq, req.ToolName, &execResult)
+
+	// 7. Send result
+	seq++
 	var pbOutput *structpb.Value
 	if execResult.Output != nil {
 		pbOutput, err = structpb.NewValue(execResult.Output)
@@ -182,7 +200,7 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		}
 	}
 	stream.Send(&gogentv1.ToolExecutionEvent{
-		Sequence: 2,
+		Sequence: seq,
 		Event: &gogentv1.ToolExecutionEvent_Result{
 			Result: &gogentv1.ToolResult{
 				Output:   pbOutput,
@@ -192,9 +210,99 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		},
 	})
 
-	// 6. Record invocation
+	// 8. Record invocation
 	h.registry.RecordInvocation(req.ToolName, !execResult.IsError)
 	return nil
+}
+
+// handleHook sends a HookInvocation and waits for the App's verdict.
+// Returns true if the hook blocked execution (already sent error result).
+func (h *Handler) handleHook(stream gogentv1.ToolService_ExecuteToolServer, seq int64, stage, toolName string, params map[string]any) bool {
+	hookID := fmt.Sprintf("%s-%s-%d", toolName, stage, time.Now().UnixNano())
+
+	payload := make(map[string]*structpb.Value)
+	for k, v := range params {
+		if pv, err := structpb.NewValue(v); err == nil {
+			payload[k] = pv
+		}
+	}
+
+	stream.Send(&gogentv1.ToolExecutionEvent{
+		Sequence: seq,
+		Event: &gogentv1.ToolExecutionEvent_Hook{
+			Hook: &gogentv1.HookInvocation{
+				HookId:  hookID,
+				Stage:   stage,
+				Payload: payload,
+			},
+		},
+	})
+
+	// Wait for verdict
+	msg, err := stream.Recv()
+	if err != nil {
+		return false // timeout/disconnect — continue execution
+	}
+	verdict := msg.GetVerdict()
+	if verdict == nil {
+		return false // unexpected message — continue
+	}
+	if !verdict.Approved {
+		// Hook rejected — send error result and signal blocked
+		stream.Send(&gogentv1.ToolExecutionEvent{
+			Sequence: seq + 1,
+			Event: &gogentv1.ToolExecutionEvent_Result{
+				Result: &gogentv1.ToolResult{
+					IsError:  true,
+					ErrorMsg: "blocked by hook: " + verdict.Reason,
+				},
+			},
+		})
+		return true
+	}
+
+	// Apply modified params if the hook changed them (pre-execute)
+	if len(verdict.ModifiedParams) > 0 {
+		for k, v := range verdict.ModifiedParams {
+			params[k] = v.AsInterface()
+		}
+	}
+	return false
+}
+
+// handlePostHook sends a post-execute hook and applies output modifications.
+func (h *Handler) handlePostHook(stream gogentv1.ToolService_ExecuteToolServer, seq int64, toolName string, execResult *Result) {
+	hookID := fmt.Sprintf("%s-post-%d", toolName, time.Now().UnixNano())
+
+	payload := make(map[string]*structpb.Value)
+	if execResult.Output != nil {
+		if pv, err := structpb.NewValue(execResult.Output); err == nil {
+			payload["output"] = pv
+		}
+	}
+
+	stream.Send(&gogentv1.ToolExecutionEvent{
+		Sequence: seq,
+		Event: &gogentv1.ToolExecutionEvent_Hook{
+			Hook: &gogentv1.HookInvocation{
+				HookId:  hookID,
+				Stage:   "post_execute",
+				Payload: payload,
+			},
+		},
+	})
+
+	msg, err := stream.Recv()
+	if err != nil {
+		return // timeout/disconnect — use original result
+	}
+	verdict := msg.GetVerdict()
+	if verdict == nil || verdict.Output == nil {
+		return // no modifications
+	}
+
+	// Apply modified output from hook
+	execResult.Output = verdict.Output.AsInterface()
 }
 
 // RegisterManifest validates and stores an app's tool manifest.

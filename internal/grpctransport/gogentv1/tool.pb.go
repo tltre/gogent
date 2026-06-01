@@ -697,6 +697,7 @@ type HookVerdict struct {
 	Approved       bool                       `protobuf:"varint,2,opt,name=approved,proto3" json:"approved,omitempty"`
 	Reason         string                     `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	ModifiedParams map[string]*structpb.Value `protobuf:"bytes,4,rep,name=modified_params,json=modifiedParams,proto3" json:"modified_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Output         *structpb.Value            `protobuf:"bytes,5,opt,name=output,proto3" json:"output,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -755,6 +756,13 @@ func (x *HookVerdict) GetReason() string {
 func (x *HookVerdict) GetModifiedParams() map[string]*structpb.Value {
 	if x != nil {
 		return x.ModifiedParams
+	}
+	return nil
+}
+
+func (x *HookVerdict) GetOutput() *structpb.Value {
+	if x != nil {
+		return x.Output
 	}
 	return nil
 }
@@ -1433,12 +1441,13 @@ const file_tool_proto_rawDesc = "" +
 	"\x03msg\"b\n" +
 	"\x12ToolExecuteRequest\x12\x1b\n" +
 	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12/\n" +
-	"\x06params\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06params\"\x8a\x02\n" +
+	"\x06params\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06params\"\xba\x02\n" +
 	"\vHookVerdict\x12\x17\n" +
 	"\ahook_id\x18\x01 \x01(\tR\x06hookId\x12\x1a\n" +
 	"\bapproved\x18\x02 \x01(\bR\bapproved\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12S\n" +
-	"\x0fmodified_params\x18\x04 \x03(\v2*.gogent.v1.HookVerdict.ModifiedParamsEntryR\x0emodifiedParams\x1aY\n" +
+	"\x0fmodified_params\x18\x04 \x03(\v2*.gogent.v1.HookVerdict.ModifiedParamsEntryR\x0emodifiedParams\x12.\n" +
+	"\x06output\x18\x05 \x01(\v2\x16.google.protobuf.ValueR\x06output\x1aY\n" +
 	"\x13ModifiedParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value:\x028\x01\"\x9d\x01\n" +
@@ -1553,32 +1562,33 @@ var file_tool_proto_depIdxs = []int32{
 	11, // 5: gogent.v1.ToolControl.sandbox_result:type_name -> gogent.v1.SandboxResult
 	25, // 6: gogent.v1.ToolExecuteRequest.params:type_name -> google.protobuf.Struct
 	21, // 7: gogent.v1.HookVerdict.modified_params:type_name -> gogent.v1.HookVerdict.ModifiedParamsEntry
-	24, // 8: gogent.v1.SandboxResult.output:type_name -> google.protobuf.Value
-	13, // 9: gogent.v1.ToolExecutionEvent.auth:type_name -> gogent.v1.AuthResult
-	14, // 10: gogent.v1.ToolExecutionEvent.hook:type_name -> gogent.v1.HookInvocation
-	15, // 11: gogent.v1.ToolExecutionEvent.sandbox:type_name -> gogent.v1.SandboxInvocation
-	1,  // 12: gogent.v1.ToolExecutionEvent.result:type_name -> gogent.v1.ToolResult
-	22, // 13: gogent.v1.HookInvocation.payload:type_name -> gogent.v1.HookInvocation.PayloadEntry
-	23, // 14: gogent.v1.SandboxInvocation.params:type_name -> gogent.v1.SandboxInvocation.ParamsEntry
-	16, // 15: gogent.v1.ManifestRequest.tools:type_name -> gogent.v1.ManifestEntry
-	19, // 16: gogent.v1.ManifestResponse.tools:type_name -> gogent.v1.ManifestStatus
-	24, // 17: gogent.v1.HookVerdict.ModifiedParamsEntry.value:type_name -> google.protobuf.Value
-	24, // 18: gogent.v1.HookInvocation.PayloadEntry.value:type_name -> google.protobuf.Value
-	2,  // 19: gogent.v1.ToolService.RegisterTool:input_type -> gogent.v1.RegisterToolRequest
-	4,  // 20: gogent.v1.ToolService.UnregisterTool:input_type -> gogent.v1.UnregisterToolRequest
-	6,  // 21: gogent.v1.ToolService.GetToolStatus:input_type -> gogent.v1.GetToolStatusRequest
-	8,  // 22: gogent.v1.ToolService.ExecuteTool:input_type -> gogent.v1.ToolControl
-	17, // 23: gogent.v1.ToolService.RegisterManifest:input_type -> gogent.v1.ManifestRequest
-	3,  // 24: gogent.v1.ToolService.RegisterTool:output_type -> gogent.v1.RegisterToolResponse
-	5,  // 25: gogent.v1.ToolService.UnregisterTool:output_type -> gogent.v1.UnregisterToolResponse
-	7,  // 26: gogent.v1.ToolService.GetToolStatus:output_type -> gogent.v1.GetToolStatusResponse
-	12, // 27: gogent.v1.ToolService.ExecuteTool:output_type -> gogent.v1.ToolExecutionEvent
-	18, // 28: gogent.v1.ToolService.RegisterManifest:output_type -> gogent.v1.ManifestResponse
-	24, // [24:29] is the sub-list for method output_type
-	19, // [19:24] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	24, // 8: gogent.v1.HookVerdict.output:type_name -> google.protobuf.Value
+	24, // 9: gogent.v1.SandboxResult.output:type_name -> google.protobuf.Value
+	13, // 10: gogent.v1.ToolExecutionEvent.auth:type_name -> gogent.v1.AuthResult
+	14, // 11: gogent.v1.ToolExecutionEvent.hook:type_name -> gogent.v1.HookInvocation
+	15, // 12: gogent.v1.ToolExecutionEvent.sandbox:type_name -> gogent.v1.SandboxInvocation
+	1,  // 13: gogent.v1.ToolExecutionEvent.result:type_name -> gogent.v1.ToolResult
+	22, // 14: gogent.v1.HookInvocation.payload:type_name -> gogent.v1.HookInvocation.PayloadEntry
+	23, // 15: gogent.v1.SandboxInvocation.params:type_name -> gogent.v1.SandboxInvocation.ParamsEntry
+	16, // 16: gogent.v1.ManifestRequest.tools:type_name -> gogent.v1.ManifestEntry
+	19, // 17: gogent.v1.ManifestResponse.tools:type_name -> gogent.v1.ManifestStatus
+	24, // 18: gogent.v1.HookVerdict.ModifiedParamsEntry.value:type_name -> google.protobuf.Value
+	24, // 19: gogent.v1.HookInvocation.PayloadEntry.value:type_name -> google.protobuf.Value
+	2,  // 20: gogent.v1.ToolService.RegisterTool:input_type -> gogent.v1.RegisterToolRequest
+	4,  // 21: gogent.v1.ToolService.UnregisterTool:input_type -> gogent.v1.UnregisterToolRequest
+	6,  // 22: gogent.v1.ToolService.GetToolStatus:input_type -> gogent.v1.GetToolStatusRequest
+	8,  // 23: gogent.v1.ToolService.ExecuteTool:input_type -> gogent.v1.ToolControl
+	17, // 24: gogent.v1.ToolService.RegisterManifest:input_type -> gogent.v1.ManifestRequest
+	3,  // 25: gogent.v1.ToolService.RegisterTool:output_type -> gogent.v1.RegisterToolResponse
+	5,  // 26: gogent.v1.ToolService.UnregisterTool:output_type -> gogent.v1.UnregisterToolResponse
+	7,  // 27: gogent.v1.ToolService.GetToolStatus:output_type -> gogent.v1.GetToolStatusResponse
+	12, // 28: gogent.v1.ToolService.ExecuteTool:output_type -> gogent.v1.ToolExecutionEvent
+	18, // 29: gogent.v1.ToolService.RegisterManifest:output_type -> gogent.v1.ManifestResponse
+	25, // [25:30] is the sub-list for method output_type
+	20, // [20:25] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_tool_proto_init() }

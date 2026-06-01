@@ -105,6 +105,13 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		tm.SetManifest(b.config.Name, entries)
 	}
 
+	// Inject HookManager into ToolManager (v0.12.9)
+	if hmComp := b.registry.GetDefault(component.ComponentHook); hmComp != nil {
+		if hm, ok := hmComp.(*hook.HookManager); ok {
+			tm.SetHookManager(hm)
+		}
+	}
+
 	app := &App{
 		config:      b.config,
 		registry:    b.registry,

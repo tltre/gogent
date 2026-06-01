@@ -91,6 +91,7 @@ message HookVerdict {
   bool approved = 2;
   string reason = 3;
   map<string, google.protobuf.Value> modified_params = 4;
+  google.protobuf.Value output = 5;
 }
 
 message SandboxResult {
