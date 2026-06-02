@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -18,30 +19,48 @@ type Handler struct {
 	gogentv1.UnimplementedToolServiceServer
 	registry      *ToolRegistry
 	manifestStore *ManifestStore
+	serverStore   *ServerStore
+	runner        *McpRunner // v0.12.8: unified MCP runner (process+http)
 	runners       map[string]Runner // key: driver type ("builtin"|"process"|"http")
 	runnersMu     sync.RWMutex
 }
 
 // NewHandler creates a ToolService gRPC handler backed by the given registry.
-// It initializes default runners for builtin/process/http and registers stub
-// handlers for the 5 built-in tools.
-func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore) *Handler {
+// It initializes runners for builtin (BuiltinRunner) and MCP (McpRunner),
+// and registers built-in handler functions.
+func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStore *ServerStore) *Handler {
+	mcpRunner := NewMcpRunner(serverStore, registry)
+
 	h := &Handler{
 		registry:      registry,
 		manifestStore: manifestStore,
+		serverStore:   serverStore,
+		runner:        mcpRunner,
 		runners:       make(map[string]Runner),
 	}
 
 	// Register driver runners
 	br := NewBuiltinRunner()
 	h.RegisterRunner(string(DriverBuiltin), br)
-	h.RegisterRunner(string(DriverProcess), NewStubRunner("process"))
-	h.RegisterRunner(string(DriverHTTP), NewStubRunner("http"))
+	h.RegisterRunner(string(DriverProcess), mcpRunner)  // McpRunner handles process
+	h.RegisterRunner(string(DriverHTTP), mcpRunner)      // McpRunner handles http
 
-	// Register 5 built-in stub handlers into the builtin runner
+	// Register 5 built-in handler functions
 	RegisterBuiltinHandlers(br)
 
 	return h
+}
+
+// StartAllServers starts all registered MCP servers and discovers their tools.
+// Called after Handler creation during daemon initialization.
+func (h *Handler) StartAllServers(ctx context.Context) {
+	for _, def := range h.registry.List() {
+		if def.Driver == string(DriverProcess) || def.Driver == string(DriverHTTP) {
+			if err := h.runner.StartServer(ctx, def.Name); err != nil {
+				fmt.Fprintf(os.Stderr, "[mcp] start %q: %v\n", def.Name, err)
+			}
+		}
+	}
 }
 
 // RegisterRunner registers a Runner implementation for a driver type.

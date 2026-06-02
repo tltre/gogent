@@ -86,6 +86,9 @@ func runDaemon() error {
 
 	d.StartGrpc()
 
+	// Start all MCP servers and discover tools (v0.12.8)
+	d.StartAllServers(context.Background())
+
 	srv := daemon.NewDaemonServer(port, d)
 	defer srv.Shutdown(context.Background())
 

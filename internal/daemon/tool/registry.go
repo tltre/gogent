@@ -33,10 +33,13 @@ var ValidDrivers = map[string]bool{
 	string(DriverHTTP):    true,
 }
 
-// ToolDefinition describes a single tool known to the daemon.
+// ToolDefinition describes a single tool or MCP server entry known to the daemon.
+// For MCP server entries (driver=process|http), ServerName is empty. Child tools
+// discovered via ListTools have ServerName set to the parent server name.
 type ToolDefinition struct {
 	Name        string            `yaml:"name"`
-	Driver      string            `yaml:"driver"` // "builtin" | "process" | "http"
+	ServerName  string            `yaml:"-"`           // parent MCP server name; empty for standalone/builtin
+	Driver      string            `yaml:"driver"`       // "builtin" | "process" | "http"
 	Command     string            `yaml:"command,omitempty"`
 	Endpoint    string            `yaml:"endpoint,omitempty"`
 	DefaultLvl  int               `yaml:"defaultLevel"`
@@ -106,9 +109,10 @@ func (r *ToolRegistry) MustRegister(def *ToolDefinition) {
 	}
 }
 
-// registerOrUpdate registers a new tool or updates an existing one.
-// Used when loading from tools.yaml (file overrides defaults).
-func (r *ToolRegistry) registerOrUpdate(def *ToolDefinition) error {
+// RegisterOrUpdate registers a new tool or updates an existing one.
+// Used when loading from tools.yaml (file overrides defaults) and
+// when McpRunner discovers child tools via ListTools.
+func (r *ToolRegistry) RegisterOrUpdate(def *ToolDefinition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -146,6 +150,19 @@ func (r *ToolRegistry) Get(name string) (*ToolDefinition, bool) {
 		return nil, false
 	}
 	return entry.def, true
+}
+
+// ListByServer returns all child tool definitions belonging to a server.
+func (r *ToolRegistry) ListByServer(serverName string) []ToolDefinition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []ToolDefinition
+	for _, entry := range r.entries {
+		if entry.def.ServerName == serverName {
+			result = append(result, *entry.def)
+		}
+	}
+	return result
 }
 
 // List returns a copy of all registered tool definitions.

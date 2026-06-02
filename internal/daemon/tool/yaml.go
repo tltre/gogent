@@ -43,10 +43,18 @@ func toolYamlPath() string {
 	return filepath.Join(home, ".gogent", "tools.yaml")
 }
 
-// LoadDefault registers the 5 built-in tool definitions into the registry.
-func (r *ToolRegistry) LoadDefault() {
+// LoadDefault registers the 5 built-in tool definitions.
+// If a ServerStore is provided, builtins are also registered there.
+func (r *ToolRegistry) LoadDefault(store ...*ServerStore) {
 	for _, def := range DefaultBuiltinTools() {
 		r.MustRegister(&def)
+		// Also register in ServerStore if provided
+		if len(store) > 0 && store[0] != nil {
+			store[0].Add(def.Name, &ServerInfo{
+				Name: def.Name, Driver: string(DriverBuiltin), DefaultLvl: def.DefaultLvl,
+				Status: StatusActive, ToolCount: 1,
+			})
+		}
 	}
 }
 
@@ -74,8 +82,11 @@ func (r *ToolRegistry) LoadFromFile(resolver *EnvResolver) error {
 	}
 
 	for name, entry := range doc.Tools {
-		// Registry always stores raw ${VAR} references, not resolved values.
-		// Resolution happens at execution time via EnvResolver.ResolveMap().
+		// v0.12.8: builtin tools are managed by LoadDefault, not tools.yaml.
+		if entry.Driver == string(DriverBuiltin) {
+			continue
+		}
+
 		def := &ToolDefinition{
 			Name:        name,
 			Driver:      entry.Driver,
@@ -85,7 +96,7 @@ func (r *ToolRegistry) LoadFromFile(resolver *EnvResolver) error {
 			Description: entry.Description,
 			Env:         entry.Env,
 		}
-		if err := r.registerOrUpdate(def); err != nil {
+		if err := r.RegisterOrUpdate(def); err != nil {
 			fmt.Fprintf(os.Stderr, "[tool] warn: skip tool %q: %v\n", name, err)
 		}
 	}
@@ -182,22 +193,16 @@ func toYamlEntry(def *ToolDefinition) toolYamlEntry {
 	}
 }
 
-// writeDefaults creates ~/.gogent/tools.yaml with built-in tools.
+// writeDefaults creates an empty ~/.gogent/tools.yaml.
+// Built-in tools are managed by LoadDefault and no longer written here.
 func (r *ToolRegistry) writeDefaults(path string) error {
 	doc := toolsYaml{
 		Tools: make(map[string]toolYamlEntry),
 	}
-	for _, def := range DefaultBuiltinTools() {
-		doc.Tools[def.Name] = toolYamlEntry{
-			Driver:      def.Driver,
-			DefaultLvl:  def.DefaultLvl,
-			Description: def.Description,
-		}
-	}
 
 	data, err := yaml.Marshal(&doc)
 	if err != nil {
-		return fmt.Errorf("marshal default tools: %w", err)
+		return fmt.Errorf("marshal tools.yaml: %w", err)
 	}
 
 	dir := filepath.Dir(path)

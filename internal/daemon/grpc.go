@@ -21,12 +21,13 @@ type GrpcServer struct {
 	server   *grpc.Server
 	listener net.Listener
 	addr     string
+	handler  *tool.Handler // v0.12.8: for StartAllServers
 }
 
 // NewGrpcServer creates a gRPC server with ToolService registered.
 // basePort is the HTTP mgmt port (e.g. 9090); gRPC listens on basePort+1 (e.g. 9091).
 // Returns nil if the port cannot be listened on.
-func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *tool.ManifestStore, resolver *tool.EnvResolver) *GrpcServer {
+func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *tool.ManifestStore, resolver *tool.EnvResolver, serverStore *tool.ServerStore) *GrpcServer {
 	addr := fmt.Sprintf("127.0.0.1:%d", basePort+1)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -44,7 +45,8 @@ func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *too
 	healthSrv.SetServingStatus("gogent.v1.ToolService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	// ToolService
-	gogentv1.RegisterToolServiceServer(s, tool.NewHandler(registry, manifestStore))
+	handler := tool.NewHandler(registry, manifestStore, serverStore)
+	gogentv1.RegisterToolServiceServer(s, handler)
 
 	// Reflection for debugging (grpc_cli, grpcurl, etc.)
 	reflection.Register(s)
@@ -52,6 +54,7 @@ func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *too
 	return &GrpcServer{
 		server:   s,
 		listener: lis,
+		handler:  handler,
 		addr:     addr,
 	}
 }
@@ -75,6 +78,14 @@ func (g *GrpcServer) Addr() string {
 		return ""
 	}
 	return g.addr
+}
+
+// Handler returns the ToolService handler, nil if GrpcServer is nil.
+func (g *GrpcServer) Handler() *tool.Handler {
+	if g == nil {
+		return nil
+	}
+	return g.handler
 }
 
 // Shutdown gracefully stops the gRPC server. Safe to call on nil.

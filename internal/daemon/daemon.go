@@ -32,8 +32,9 @@ type Daemon struct {
 	compRetryMu           sync.Mutex           // protects retry maps
 
 	// v0.12.1: Centralized tool management.
-	toolReg       *tool.ToolRegistry   // registered tool definitions
+	toolReg       *tool.ToolRegistry   // registered tool definitions (child tools)
 	manifestStore *tool.ManifestStore // per-app manifest registrations
+	serverStore   *tool.ServerStore    // v0.12.8: MCP server metadata
 	resolver      *tool.EnvResolver    // v0.12.6: credential resolver
 	grpcSrv       *GrpcServer          // gRPC ToolService server
 	grpcReady     bool                 // true after StartGrpc() completes
@@ -43,9 +44,9 @@ type Daemon struct {
 // port for allocation. It scans ~/.gogent/ for surviving app instances from
 // a previous daemon crash and recovers them.
 func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
-	// Initialize tool registry with built-in tools + tools.yaml overrides.
+	// Create ServerStore and ToolRegistry.
+	serverStore := tool.NewServerStore()
 	toolReg := tool.NewToolRegistry()
-	toolReg.LoadDefault()
 
 	// Load credentials (default ~/.gogent/credentials.yaml).
 	var credPath string
@@ -55,15 +56,13 @@ func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 	creds, _ := tool.LoadCredentials(credPath)
 	resolver := tool.NewEnvResolver(creds)
 
+	// Step 1: Load built-in tools into both ServerStore and ToolRegistry.
+	toolReg.LoadDefault(serverStore)
+
+	// Step 2: Load process/http servers from tools.yaml into ToolRegistry.
+	// (ServerStore entries are added by the caller after NewDaemon returns.)
 	if err := toolReg.LoadFromFile(resolver); err != nil {
 		fmt.Fprintf(os.Stderr, "[daemon] warn: load tools.yaml: %v\n", err)
-	}
-
-	// Set up credentials file path for fsnotify watching
-	if credPath != "" {
-		resolver.SetCredentialsPath(credPath)
-	} else if p := tool.DefaultCredentialsPath(); p != "" {
-		resolver.SetCredentialsPath(p)
 	}
 
 	d := &Daemon{
@@ -76,6 +75,7 @@ func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 		toolReg:               toolReg,
 		manifestStore:         tool.NewManifestStore(),
 		resolver:              resolver,
+		serverStore:           serverStore,
 	}
 	d.RecoverApps()
 	return d
@@ -153,6 +153,21 @@ func (d *Daemon) ManifestStore() *tool.ManifestStore {
 	return d.manifestStore
 }
 
+// ServerStore returns the daemon's server store (v0.12.8).
+func (d *Daemon) ServerStore() *tool.ServerStore {
+	return d.serverStore
+}
+
+// StartAllServers starts all registered MCP servers and discovers their tools.
+// Called after gRPC server is created.
+func (d *Daemon) StartAllServers(ctx context.Context) {
+	if d.grpcSrv != nil {
+		if h := d.grpcSrv.Handler(); h != nil {
+			h.StartAllServers(ctx)
+		}
+	}
+}
+
 // Resolver returns the daemon's credential resolver (v0.12.6).
 func (d *Daemon) Resolver() *tool.EnvResolver {
 	return d.resolver
@@ -175,7 +190,7 @@ func (d *Daemon) StartCredentialWatch(ctx context.Context) {
 // The gRPC port is basePort+1. This is called explicitly from runDaemon
 // after other subsystems are ready.
 func (d *Daemon) StartGrpc() {
-	d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore, d.resolver)
+		d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore, d.resolver, d.serverStore)
 	if d.grpcSrv != nil {
 		d.grpcSrv.Start()
 		d.grpcReady = true
