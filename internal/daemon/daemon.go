@@ -168,6 +168,23 @@ func (d *Daemon) StartAllServers(ctx context.Context) {
 	}
 }
 
+// Handler returns the ToolService gRPC handler, or nil if not available.
+func (d *Daemon) Handler() *tool.Handler {
+	if d.grpcSrv != nil {
+		return d.grpcSrv.Handler()
+	}
+	return nil
+}
+
+// StartLifecycle begins the MCP server health check loop.
+func (d *Daemon) StartLifecycle(ctx context.Context) {
+	if d.grpcSrv != nil {
+		if h := d.grpcSrv.Handler(); h != nil {
+			h.StartLifecycle(ctx)
+		}
+	}
+}
+
 // Resolver returns the daemon's credential resolver (v0.12.6).
 func (d *Daemon) Resolver() *tool.EnvResolver {
 	return d.resolver

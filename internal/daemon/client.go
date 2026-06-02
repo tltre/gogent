@@ -125,6 +125,11 @@ func (c *DaemonClient) ToolUnregister(name string, force bool) error {
 	return c.delete(path)
 }
 
+// ToolRestart restarts a registered MCP server.
+func (c *DaemonClient) ToolRestart(name string) error {
+	return c.post(api.PathDaemonToolsRestart+name+"/restart", nil, nil)
+}
+
 // Ping performs a lightweight health check.
 func (c *DaemonClient) Ping() error {
 	_, err := c.Info()

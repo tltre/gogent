@@ -89,6 +89,11 @@ func runDaemon() error {
 	// Start all MCP servers and discover tools (v0.12.8)
 	d.StartAllServers(context.Background())
 
+	// Start health check loop (v0.12.8)
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+	defer lifecycleCancel()
+	d.StartLifecycle(lifecycleCtx)
+
 	srv := daemon.NewDaemonServer(port, d)
 	defer srv.Shutdown(context.Background())
 

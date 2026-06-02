@@ -41,6 +41,7 @@ func NewDaemonServer(addr string, d *Daemon) *Server {
 	mux.HandleFunc(api.PathDaemonInfo, s.handleInfo)
 	mux.HandleFunc(api.PathDaemonTools, s.handleTools)
 	mux.HandleFunc(api.PathDaemonToolsPath, s.handleToolsPath)
+	mux.HandleFunc(api.PathDaemonToolsRestart, s.handleToolsRestart)
 
 	otelHandler := otelhttp.NewHandler(mux, "mgmt-daemon")
 
@@ -202,6 +203,39 @@ func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleToolsRestart restarts a registered MCP server.
+// POST /api/v1/daemon/tools/{name}/restart
+func (s *Server) handleToolsRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, api.PathDaemonToolsRestart)
+	name = strings.TrimSuffix(name, "/restart")
+	if name == "" || strings.Contains(name, "/") {
+		http.Error(w, "server name required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the server exists in ServerStore
+	if !s.daemon.ServerStore().Exists(name) {
+		http.Error(w, "server not found", http.StatusNotFound)
+		return
+	}
+
+	// Restart via the handler's McpRunner
+	if handler := s.daemon.Handler(); handler != nil {
+		if err := handler.RestartServer(context.Background(), name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "restarted"})
 }
 
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {

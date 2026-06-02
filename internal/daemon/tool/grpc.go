@@ -20,7 +20,8 @@ type Handler struct {
 	registry      *ToolRegistry
 	manifestStore *ManifestStore
 	serverStore   *ServerStore
-	runner        *McpRunner // v0.12.8: unified MCP runner (process+http)
+	runner        *McpRunner        // v0.12.8: unified MCP runner (process+http)
+	lifecycle     *LifecycleManager // v0.12.8: health check + auto-restart
 	runners       map[string]Runner // key: driver type ("builtin"|"process"|"http")
 	runnersMu     sync.RWMutex
 }
@@ -36,6 +37,7 @@ func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStor
 		manifestStore: manifestStore,
 		serverStore:   serverStore,
 		runner:        mcpRunner,
+		lifecycle:     NewLifecycleManager(serverStore, mcpRunner),
 		runners:       make(map[string]Runner),
 	}
 
@@ -49,6 +51,21 @@ func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStor
 	RegisterBuiltinHandlers(br)
 
 	return h
+}
+
+// StartLifecycle begins the health check loop for all MCP servers.
+func (h *Handler) StartLifecycle(ctx context.Context) {
+	if h.lifecycle != nil {
+		go h.lifecycle.Start(ctx)
+	}
+}
+
+// RestartServer restarts an MCP server via the McpRunner.
+func (h *Handler) RestartServer(ctx context.Context, name string) error {
+	if h.runner == nil {
+		return fmt.Errorf("MCP runner not available")
+	}
+	return h.runner.RestartServer(ctx, name)
 }
 
 // StartAllServers starts all registered MCP servers and discovers their tools.
@@ -337,26 +354,54 @@ func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRe
 	allAccepted := true
 
 	for _, entry := range req.Tools {
+		// Check if entry is a direct tool in ToolRegistry
 		def, exists := h.registry.Get(entry.Name)
-		if !exists {
-			allAccepted = false
+		if exists {
+			// Direct tool (builtin)
+			effectiveLevel := int(entry.SecurityLevel)
+			if effectiveLevel < def.DefaultLvl {
+				effectiveLevel = def.DefaultLvl
+			}
 			statuses = append(statuses, &gogentv1.ManifestStatus{
-				Name:     entry.Name,
-				Accepted: false,
-				Reason:   "tool not found in registry",
+				Name:           entry.Name,
+				Accepted:       true,
+				EffectiveLevel: int32(effectiveLevel),
 			})
 			continue
 		}
 
-		effectiveLevel := int(entry.SecurityLevel)
-		if effectiveLevel < def.DefaultLvl {
-			effectiveLevel = def.DefaultLvl
+		// Check if entry is an MCP server name — expand to child tools
+		if h.serverStore != nil && h.serverStore.Exists(entry.Name) {
+			children := h.registry.ListByServer(entry.Name)
+			if len(children) == 0 {
+				allAccepted = false
+				statuses = append(statuses, &gogentv1.ManifestStatus{
+					Name:     entry.Name,
+					Accepted: false,
+					Reason:   "server has no discovered tools",
+				})
+				continue
+			}
+			for _, child := range children {
+				effectiveLevel := int(entry.SecurityLevel)
+				if effectiveLevel < child.DefaultLvl {
+					effectiveLevel = child.DefaultLvl
+				}
+				statuses = append(statuses, &gogentv1.ManifestStatus{
+					Name:           child.Name,
+					Accepted:       true,
+					EffectiveLevel: int32(effectiveLevel),
+				})
+			}
+			continue
 		}
 
+		// Not found anywhere
+		allAccepted = false
 		statuses = append(statuses, &gogentv1.ManifestStatus{
-			Name:           entry.Name,
-			Accepted:       true,
-			EffectiveLevel: int32(effectiveLevel),
+			Name:     entry.Name,
+			Accepted: false,
+			Reason:   "tool not found in registry",
 		})
 	}
 

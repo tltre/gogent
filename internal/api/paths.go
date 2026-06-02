@@ -26,6 +26,7 @@ const (
 	PathDaemonComponentsHealth = "/api/v1/daemon/components/health"
 	PathDaemonInfo             = "/api/v1/daemon/info"
 	// v0.12.1: Tool management endpoints (for CLI inspection)
-	PathDaemonTools     = "/api/v1/daemon/tools"
-	PathDaemonToolsPath = "/api/v1/daemon/tools/"
+	PathDaemonTools      = "/api/v1/daemon/tools"
+	PathDaemonToolsPath  = "/api/v1/daemon/tools/"
+	PathDaemonToolsRestart = "/api/v1/daemon/tools/" // + {name}/restart
 )

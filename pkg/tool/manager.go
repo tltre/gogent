@@ -115,6 +115,43 @@ func (tm *ToolManager) List() []ToolInfo {
 	return result
 }
 
+// ListByServer returns all tools belonging to a specific MCP server.
+func (tm *ToolManager) ListByServer(serverName string) []ToolInfo {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	var result []ToolInfo
+	prefix := serverName + "."
+	for _, t := range tm.cache {
+		if len(t.Name) > len(prefix) && t.Name[:len(prefix)] == prefix {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// ListServers returns the names of all MCP servers (plus standalone tools).
+func (tm *ToolManager) ListServers() []string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	seen := make(map[string]bool)
+	var servers []string
+	for _, t := range tm.cache {
+		// Extract server name from "<server>.<tool>" or use the name itself
+		serverName := t.Name
+		for i := len(t.Name) - 1; i >= 0; i-- {
+			if t.Name[i] == '.' {
+				serverName = t.Name[:i]
+				break
+			}
+		}
+		if !seen[serverName] {
+			seen[serverName] = true
+			servers = append(servers, serverName)
+		}
+	}
+	return servers
+}
+
 // Execute sends a tool execution request to the daemon via gRPC bidirectional stream.
 // Returns an error if the daemon is not connected.
 func (tm *ToolManager) Execute(ctx context.Context, name string, params map[string]any) (Result, error) {
