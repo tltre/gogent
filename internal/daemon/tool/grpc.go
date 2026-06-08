@@ -168,6 +168,10 @@ func (h *Handler) GetToolStatus(ctx context.Context, req *gogentv1.GetToolStatus
 func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) error {
 	seq := int64(0)
 
+	// v0.13.4: Stream tracking for connection-level cleanup (future).
+	// Individual stream end does NOT trigger cleanup — only transport-level
+	// disconnection (via StopApp) does.
+
 	// 1. First message must be ToolExecuteRequest
 	firstMsg, err := stream.Recv()
 	if err != nil {
