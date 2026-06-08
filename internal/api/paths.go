@@ -29,4 +29,13 @@ const (
 	PathDaemonTools      = "/api/v1/daemon/tools"
 	PathDaemonToolsPath  = "/api/v1/daemon/tools/"
 	PathDaemonToolsRestart = "/api/v1/daemon/tools/" // + {name}/restart
+
+	// v0.13.x: Sandbox management endpoints
+	PathDaemonSandboxProviders    = "/api/v1/daemon/sandbox/providers"
+	PathDaemonSandboxProvidersPath = "/api/v1/daemon/sandbox/providers/"  // + {name}
+	PathDaemonSandboxProfiles     = "/api/v1/daemon/sandbox/profiles"
+	PathDaemonSandboxProfilesPath = "/api/v1/daemon/sandbox/profiles/"   // + {name}
+	PathDaemonSandboxDefaults     = "/api/v1/daemon/sandbox/defaults"
+	PathDaemonSandboxReload       = "/api/v1/daemon/sandbox/reload"
+	PathDaemonSandboxStatus       = "/api/v1/daemon/sandbox/status"
 )

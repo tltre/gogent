@@ -35,19 +35,19 @@ func LoadCredentials(path string) (map[string]string, error) {
 
 // SandboxFile represents the full structure of ~/.gogent/sandbox.yaml.
 type SandboxFile struct {
-	Providers map[string]providerEntry `yaml:"sandbox-providers"`
-	Profiles  map[string]profileEntry  `yaml:"sandbox-profiles"`
-	Defaults  *defaultMappingsEntry    `yaml:"defaults,omitempty"`
+	Providers map[string]ProviderEntry `yaml:"sandbox-providers"`
+	Profiles  map[string]ProfileEntry  `yaml:"sandbox-profiles"`
+	Defaults  *DefaultMappingsEntry    `yaml:"defaults,omitempty"`
 }
 
-type providerEntry struct {
+type ProviderEntry struct {
 	Type     string `yaml:"type"`               // "e2b" | "builtin" | "agent-sandbox"
 	Endpoint string `yaml:"endpoint,omitempty"` // API base URL
 	APIKey   string `yaml:"apiKey,omitempty"`   // API key (may contain ${VAR} refs)
 	Token    string `yaml:"token,omitempty"`    // alternative auth token
 }
 
-type profileEntry struct {
+type ProfileEntry struct {
 	Provider      string            `yaml:"provider"`
 	Template      string            `yaml:"template"`
 	Network       *bool             `yaml:"network,omitempty"`
@@ -56,35 +56,35 @@ type profileEntry struct {
 	ReadOnlyRoot  bool              `yaml:"readOnlyRoot,omitempty"`
 	AllowCommands []string          `yaml:"allowCommands,omitempty"`
 	AllowReadPaths []string         `yaml:"allowReadPaths,omitempty"`
-	Egress        *egressEntry      `yaml:"egress,omitempty"`
-	Lifecycle     *lifecycleEntry   `yaml:"lifecycle,omitempty"`
-	Snapshot      *snapshotEntry    `yaml:"snapshot,omitempty"`
+	Egress        *EgressEntry      `yaml:"egress,omitempty"`
+	Lifecycle     *LifecycleEntry   `yaml:"lifecycle,omitempty"`
+	Snapshot      *SnapshotEntry    `yaml:"snapshot,omitempty"`
 	E2B           map[string]any    `yaml:"e2b,omitempty"`
 }
 
-type egressEntry struct {
+type EgressEntry struct {
 	AllowDomains []string `yaml:"allowDomains,omitempty"`
 	DenyDomains  []string `yaml:"denyDomains,omitempty"`
 }
 
-type lifecycleEntry struct {
+type LifecycleEntry struct {
 	Mode    string         `yaml:"mode"`               // "persistent" | "ephemeral" | "session"
 	Timeout string         `yaml:"timeout,omitempty"`  // duration string
-	Snapshot *snapshotEntry `yaml:"snapshot,omitempty"`
+	Snapshot *SnapshotEntry `yaml:"snapshot,omitempty"`
 }
 
-type snapshotEntry struct {
+type SnapshotEntry struct {
 	Enabled bool   `yaml:"enabled"`
 	OnStop  string `yaml:"onStop,omitempty"`
 	OnStart string `yaml:"onStart,omitempty"`
 }
 
-type defaultMappingsEntry struct {
-	Builtin profileRefEntry `yaml:"builtin"`
-	Process profileRefEntry `yaml:"process"`
+type DefaultMappingsEntry struct {
+	Builtin ProfileRefEntry `yaml:"builtin"`
+	Process ProfileRefEntry `yaml:"process"`
 }
 
-type profileRefEntry struct {
+type ProfileRefEntry struct {
 	Profile string `yaml:"profile"`
 }
 
@@ -169,11 +169,11 @@ func ApplySandboxFile(mgr *SandboxManager, sf *SandboxFile, resolver *Resolver) 
 			}
 			p = e2b
 		default:
-			p = &genericProvider{
-				name:         name,
-				providerType: SandboxType(entry.Type),
-				endpoint:     entry.Endpoint,
-				apiKey:       apiKey,
+			p = &GenericProvider{
+				PName:      name,
+				PType:      SandboxType(entry.Type),
+				PEndpoint:  entry.Endpoint,
+				PAPIKey:    apiKey,
 			}
 		}
 
@@ -208,7 +208,7 @@ func ApplySandboxFile(mgr *SandboxManager, sf *SandboxFile, resolver *Resolver) 
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-func toProfile(name string, e profileEntry) (*SandboxProfile, error) {
+func toProfile(name string, e ProfileEntry) (*SandboxProfile, error) {
 	p := &SandboxProfile{
 		Name:           name,
 		Provider:       e.Provider,
@@ -269,7 +269,7 @@ func toProfile(name string, e profileEntry) (*SandboxProfile, error) {
 // Validation
 // ---------------------------------------------------------------------------
 
-func validateProvider(_ string, e providerEntry) error {
+func validateProvider(_ string, e ProviderEntry) error {
 	if e.Type == "" {
 		return fmt.Errorf("type is required")
 	}
@@ -292,22 +292,22 @@ func validateProvider(_ string, e providerEntry) error {
 }
 
 // ---------------------------------------------------------------------------
-// genericProvider — v0.13.0 placeholder
+// GenericProvider — v0.13.0 placeholder
 // ---------------------------------------------------------------------------
 
-// genericProvider is a placeholder provider that registers the metadata
-// from sandbox.yaml. Actual implementation (E2BProvider, etc.) comes in v0.13.1.
-type genericProvider struct {
-	name         string
-	providerType SandboxType
-	endpoint     string
-	apiKey       string
+// GenericProvider is a placeholder provider that registers metadata
+// from sandbox.yaml. Actual backends (E2BProvider) have their own implementations.
+type GenericProvider struct {
+	PName        string       `yaml:"-"`
+	PType        SandboxType  `yaml:"-"`
+	PEndpoint    string       `yaml:"-"`
+	PAPIKey      string       `yaml:"-"`
 }
 
-func (p *genericProvider) Name() string                   { return p.name }
-func (p *genericProvider) Type() SandboxType              { return p.providerType }
-func (p *genericProvider) Create(_ context.Context, _ *SandboxProfile, _ *SandboxConfig) (ISandbox, error) {
-	return nil, fmt.Errorf("sandbox provider %q (%s) not yet implemented — planned for v0.13.1", p.name, p.providerType)
+func (p *GenericProvider) Name() string                   { return p.PName }
+func (p *GenericProvider) Type() SandboxType              { return p.PType }
+func (p *GenericProvider) Create(_ context.Context, _ *SandboxProfile, _ *SandboxConfig) (ISandbox, error) {
+	return nil, fmt.Errorf("sandbox provider %q (%s) not yet implemented", p.PName, p.PType)
 }
 
 // ---------------------------------------------------------------------------

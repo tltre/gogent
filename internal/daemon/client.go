@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon/sandbox"
 	"github.com/tltre/gogent/internal/daemon/tool"
 )
 
@@ -179,6 +180,116 @@ func (c *DaemonClient) post(path string, body []byte, result any) error {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox client methods
+// ---------------------------------------------------------------------------
+
+// SandboxProviderAdd registers a new provider in the daemon and persists to file.
+func (c *DaemonClient) SandboxProviderAdd(req api.SandboxProviderRequest) error {
+	return c.postJSON(api.PathDaemonSandboxProviders, req)
+}
+
+// SandboxProviderRemove removes a provider from the daemon and file.
+func (c *DaemonClient) SandboxProviderRemove(name string) error {
+	return c.delete(api.PathDaemonSandboxProvidersPath + name)
+}
+
+// SandboxProviderList lists all registered providers.
+func (c *DaemonClient) SandboxProviderList() ([]sandbox.ProviderEntry, error) {
+	var result []sandbox.ProviderEntry
+	err := c.getJSON(api.PathDaemonSandboxProviders, &result)
+	return result, err
+}
+
+// SandboxProfileAdd registers a new profile in the daemon and persists to file.
+func (c *DaemonClient) SandboxProfileAdd(req api.SandboxProfileRequest) error {
+	return c.postJSON(api.PathDaemonSandboxProfiles, req)
+}
+
+// SandboxProfileEdit updates an existing profile.
+func (c *DaemonClient) SandboxProfileEdit(name string, req api.SandboxProfileEditRequest) error {
+	return c.putJSON(api.PathDaemonSandboxProfilesPath+name, req)
+}
+
+// SandboxProfileRemove removes a profile from the daemon and file.
+func (c *DaemonClient) SandboxProfileRemove(name string) error {
+	return c.delete(api.PathDaemonSandboxProfilesPath + name)
+}
+
+// SandboxProfileList lists all registered profiles.
+func (c *DaemonClient) SandboxProfileList() ([]api.SandboxProfileView, error) {
+	var result []api.SandboxProfileView
+	err := c.getJSON(api.PathDaemonSandboxProfiles, &result)
+	return result, err
+}
+
+// SandboxReload triggers a full reload of sandbox.yaml.
+func (c *DaemonClient) SandboxReload() error {
+	return c.postJSON(api.PathDaemonSandboxReload, struct{}{})
+}
+
+// SandboxStatus returns the full sandbox system status.
+func (c *DaemonClient) SandboxStatus() (*api.SandboxStatusResponse, error) {
+	var result api.SandboxStatusResponse
+	err := c.getJSON(api.PathDaemonSandboxStatus, &result)
+	return &result, err
+}
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
+
+func (c *DaemonClient) getJSON(path string, result any) error {
+	resp, err := c.http.Get(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("daemon mgmt request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+func (c *DaemonClient) postJSON(path string, body any) error {
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("daemon mgmt request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon mgmt request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		rbody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(rbody)))
+	}
+	return nil
+}
+
+func (c *DaemonClient) putJSON(path string, body any) error {
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequest(http.MethodPut, c.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("daemon mgmt request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon mgmt request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		rbody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("request failed: %d - %s", resp.StatusCode, strings.TrimSpace(string(rbody)))
+	}
+	return nil
 }
 
 func (c *DaemonClient) delete(path string) error {

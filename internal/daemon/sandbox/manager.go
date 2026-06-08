@@ -69,6 +69,13 @@ func (mgr *SandboxManager) GetProfile(name string) (*SandboxProfile, bool) {
 	return p, ok
 }
 
+// RemoveProfile removes a profile by name.
+func (mgr *SandboxManager) RemoveProfile(name string) {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	delete(mgr.profiles, name)
+}
+
 // ListProfiles returns all registered profile names.
 func (mgr *SandboxManager) ListProfiles() []string {
 	mgr.mu.RLock()
@@ -222,6 +229,65 @@ func (mgr *SandboxManager) RefreshAll(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Reload
+// ---------------------------------------------------------------------------
+
+// ReloadFromConfig atomically replaces all profiles and providers from a
+// parsed SandboxFile. Existing sandbox instances are NOT affected — only
+// the configuration for new sandbox creation is updated.
+//
+// Returns the new DefaultMappings, or an error if the config is invalid.
+func (mgr *SandboxManager) ReloadFromConfig(sf *SandboxFile) (*DefaultMappings, error) {
+	if sf == nil {
+		return nil, fmt.Errorf("cannot reload from nil config")
+	}
+
+	// Build new provider registry
+	newProviders := NewProviderRegistry()
+	for name, entry := range sf.Providers {
+		if err := validateProvider(name, entry); err != nil {
+			return nil, fmt.Errorf("provider %q: %w", name, err)
+		}
+		p := &GenericProvider{
+			PName:      name,
+			PType:      SandboxType(entry.Type),
+			PEndpoint:  entry.Endpoint,
+			PAPIKey:    entry.APIKey,
+		}
+		if err := newProviders.Register(p); err != nil {
+			return nil, fmt.Errorf("register provider %q: %w", name, err)
+		}
+	}
+
+	// Build new profile map
+	newProfiles := make(map[string]*SandboxProfile, len(sf.Profiles))
+	for name, entry := range sf.Profiles {
+		profile, err := toProfile(name, entry)
+		if err != nil {
+			return nil, fmt.Errorf("profile %q: %w", name, err)
+		}
+		newProfiles[name] = profile
+	}
+
+	// Parse defaults
+	var newDefaults *DefaultMappings
+	if sf.Defaults != nil {
+		newDefaults = &DefaultMappings{
+			Builtin: ProfileRef{Profile: sf.Defaults.Builtin.Profile},
+			Process: ProfileRef{Profile: sf.Defaults.Process.Profile},
+		}
+	}
+
+	// Atomically swap registries
+	mgr.mu.Lock()
+	mgr.providers = newProviders
+	mgr.profiles = newProfiles
+	mgr.mu.Unlock()
+
+	return newDefaults, nil
 }
 
 // ---------------------------------------------------------------------------

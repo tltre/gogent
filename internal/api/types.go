@@ -103,6 +103,52 @@ func StatusToString(s component.ComponentStatus) string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Sandbox API types (v0.13.x)
+// ---------------------------------------------------------------------------
+
+// SandboxProviderRequest is the POST body for adding a provider.
+type SandboxProviderRequest struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Endpoint string `json:"endpoint,omitempty"`
+	APIKey   string `json:"apiKey,omitempty"`
+}
+
+// SandboxProfileRequest is the POST body for adding a profile.
+type SandboxProfileRequest struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	Template string `json:"template"`
+	Network  *bool  `json:"network,omitempty"`
+}
+
+// SandboxProfileEditRequest is the PUT body for editing a profile.
+type SandboxProfileEditRequest struct {
+	Provider *string `json:"provider,omitempty"`
+	Template *string `json:"template,omitempty"`
+	Network  *bool   `json:"network,omitempty"`
+}
+
+// SandboxProfileView is the response item for listing profiles.
+type SandboxProfileView struct {
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	Template string `json:"template"`
+}
+
+// SandboxProviderView is a provider entry in status/list responses.
+type SandboxProviderView struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// SandboxStatusResponse is the response from /status.
+type SandboxStatusResponse struct {
+	Providers []SandboxProviderView `json:"providers"`
+	Profiles  []SandboxProfileView  `json:"profiles"`
+}
+
 // RegisterToolRequest is the JSON body for POST /api/v1/daemon/tools.
 type RegisterToolRequest struct {
 	Name         string            `json:"name"`
