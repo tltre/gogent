@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/credentials"
 	"github.com/tltre/gogent/internal/daemon/sandbox"
 	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/pkg/component"
@@ -58,8 +59,8 @@ func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 	if len(credentialsPath) > 0 {
 		credPath = credentialsPath[0]
 	}
-	creds, _ := tool.LoadCredentials(credPath)
-	resolver := tool.NewEnvResolver(creds)
+	creds, _ := credentials.LoadCredentials(credPath)
+	resolver := credentials.NewResolver(creds)
 
 	// Step 1: Load built-in tools into both ServerStore and ToolRegistry.
 	toolReg.LoadDefault(serverStore)
@@ -88,7 +89,11 @@ func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 	if sf, err := sandbox.LoadSandboxFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "[daemon] warn: load sandbox.yaml: %v\n", err)
 	} else if sf != nil {
-		defaults, err := sandbox.ApplySandboxFile(d.sandboxMgr, sf, nil)
+		// Load credentials from ~/.gogent/credentials.yaml for ${VAR} resolution.
+		credPath := credentials.DefaultCredentialsPath()
+		creds, _ := credentials.LoadCredentials(credPath)
+		resolver := credentials.NewResolver(creds)
+		defaults, err := sandbox.ApplySandboxFile(d.sandboxMgr, sf, resolver)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[daemon] warn: apply sandbox.yaml: %v\n", err)
 		} else {
@@ -210,7 +215,7 @@ func (d *Daemon) SandboxManager() *sandbox.SandboxManager {
 }
 
 // Resolver returns the daemon's credential resolver (v0.12.6).
-func (d *Daemon) Resolver() *tool.EnvResolver {
+func (d *Daemon) Resolver() *credentials.Resolver {
 	return d.resolver
 }
 

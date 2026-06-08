@@ -47,18 +47,14 @@ var SandboxManagerServiceDesc = grpc.ServiceDesc{
 // Handlers — all messages use *structpb.Struct for protobuf wire serialization
 // ---------------------------------------------------------------------------
 
-type sandboxManagerServerImpl struct {
-	server SandboxManagerServer
-}
-
 func _SandboxManager_ListSandboxes_Handler(srv any, ctx context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
 	in := &structpb.Struct{}
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	_ = in
-	impl := srv.(*sandboxManagerServerImpl)
-	result, err := impl.server.ListSandboxes(ctx, &ListSandboxesRequest{})
+	server := srv.(SandboxManagerServer)
+	result, err := server.ListSandboxes(ctx, &ListSandboxesRequest{})
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +80,7 @@ func _SandboxManager_CreateSandbox_Handler(srv any, ctx context.Context, dec fun
 		Lifecycle: in.Fields["lifecycle"].GetStringValue(),
 		TimeoutMs: int64(in.Fields["timeout_ms"].GetNumberValue()),
 	}
-	impl := srv.(*sandboxManagerServerImpl)
-	result, err := impl.server.CreateSandbox(ctx, req)
+	result, err := srv.(SandboxManagerServer).CreateSandbox(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +95,7 @@ func _SandboxManager_GetSandbox_Handler(srv any, ctx context.Context, dec func(a
 		return nil, err
 	}
 	req := &GetSandboxRequest{SandboxName: in.Fields["sandbox_name"].GetStringValue()}
-	impl := srv.(*sandboxManagerServerImpl)
-	result, err := impl.server.GetSandbox(ctx, req)
+	result, err := srv.(SandboxManagerServer).GetSandbox(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +110,7 @@ func _SandboxManager_DestroySandbox_Handler(srv any, ctx context.Context, dec fu
 		return nil, err
 	}
 	req := &DestroySandboxRequest{SandboxName: in.Fields["sandbox_name"].GetStringValue()}
-	impl := srv.(*sandboxManagerServerImpl)
-	result, err := impl.server.DestroySandbox(ctx, req)
+	result, err := srv.(SandboxManagerServer).DestroySandbox(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +136,7 @@ func _SandboxManager_ExecInSandbox_Handler(srv any, ctx context.Context, dec fun
 		TimeoutMs:   int64(f["timeout_ms"].GetNumberValue()),
 		Env:         env,
 	}
-	impl := srv.(*sandboxManagerServerImpl)
-	result, err := impl.server.ExecInSandbox(ctx, req)
+	result, err := srv.(SandboxManagerServer).ExecInSandbox(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +177,7 @@ func (UnimplementedSandboxManagerServer) ExecInSandbox(context.Context, *ExecInS
 }
 
 func RegisterSandboxManagerServer(s grpc.ServiceRegistrar, srv SandboxManagerServer) {
-	s.RegisterService(&SandboxManagerServiceDesc, &sandboxManagerServerImpl{server: srv})
+	s.RegisterService(&SandboxManagerServiceDesc, srv)
 }
 
 // ---------------------------------------------------------------------------

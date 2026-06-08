@@ -7,18 +7,26 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/tltre/gogent/internal/credentials"
 	"gopkg.in/yaml.v3"
 )
 
-// Resolver resolves ${VAR} references from environment variables.
-// This is a simplified resolver for v0.13.0. In later versions,
-// credentials.yaml can be integrated.
-type Resolver struct{}
+// Resolver is an alias for credentials.Resolver.
+type Resolver = credentials.Resolver
 
-func NewResolver() *Resolver { return &Resolver{} }
+// NewResolver creates a credentials resolver.
+func NewResolver(creds map[string]string) *Resolver {
+	return credentials.NewResolver(creds)
+}
 
-func (r *Resolver) Resolve(input string) string {
-	return os.Expand(input, os.Getenv)
+// DefaultCredentialsPath returns ~/.gogent/credentials.yaml.
+func DefaultCredentialsPath() string {
+	return credentials.DefaultCredentialsPath()
+}
+
+// LoadCredentials reads a YAML credentials file.
+func LoadCredentials(path string) (map[string]string, error) {
+	return credentials.LoadCredentials(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +150,7 @@ func ApplySandboxFile(mgr *SandboxManager, sf *SandboxFile, resolver *Resolver) 
 	}
 
 	if resolver == nil {
-		resolver = NewResolver()
+		resolver = NewResolver(nil)
 	}
 
 	// 1. Register providers
@@ -267,9 +275,7 @@ func validateProvider(_ string, e providerEntry) error {
 	}
 	switch SandboxType(e.Type) {
 	case SandboxE2B:
-		if e.Endpoint == "" {
-			return fmt.Errorf("endpoint is required for type %q", e.Type)
-		}
+		// Endpoint is optional for E2B — defaults to https://api.e2b.app
 		if e.APIKey == "" {
 			return fmt.Errorf("apiKey is required for type %q", e.Type)
 		}

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/tltre/gogent/internal/credentials"
 	"github.com/tltre/gogent/internal/daemon/sandbox"
 	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
@@ -28,7 +29,7 @@ type GrpcServer struct {
 // NewGrpcServer creates a gRPC server with ToolService registered.
 // basePort is the HTTP mgmt port (e.g. 9090); gRPC listens on basePort+1 (e.g. 9091).
 // Returns nil if the port cannot be listened on.
-func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *tool.ManifestStore, resolver *tool.EnvResolver, serverStore *tool.ServerStore, sandboxMgr *sandbox.SandboxManager, sandboxDefaults *sandbox.DefaultMappings) *GrpcServer {
+func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *tool.ManifestStore, resolver *credentials.Resolver, serverStore *tool.ServerStore, sandboxMgr *sandbox.SandboxManager, sandboxDefaults *sandbox.DefaultMappings) *GrpcServer {
 	addr := fmt.Sprintf("127.0.0.1:%d", basePort+1)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
