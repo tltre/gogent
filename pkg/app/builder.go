@@ -105,6 +105,22 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		tm.SetManifest(b.config.Name, entries)
 	}
 
+	// v0.13.3: Inject sandbox declarations into ToolManager.
+	if len(b.config.Sandboxes) > 0 || b.config.Default != nil {
+		sandboxes := make([]tool.SandboxDecl, len(b.config.Sandboxes))
+		for i, sb := range b.config.Sandboxes {
+			sandboxes[i] = tool.SandboxDecl{
+				Name:    sb.Name,
+				Profile: sb.Profile,
+			}
+		}
+		defaultSb := ""
+		if b.config.Default != nil {
+			defaultSb = b.config.Default.Sandbox
+		}
+		tm.SetSandboxConfig(sandboxes, defaultSb)
+	}
+
 	// Inject HookManager into ToolManager (v0.12.9)
 	if hmComp := b.registry.GetDefault(component.ComponentHook); hmComp != nil {
 		if hm, ok := hmComp.(*hook.HookManager); ok {

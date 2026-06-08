@@ -2,8 +2,11 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+
+	"google.golang.org/grpc/metadata"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
@@ -42,6 +45,8 @@ func (tm *ToolManager) registerManifest(ctx context.Context) error {
 	client := tm.client
 	entries := tm.manifest
 	appName := tm.appName
+	sandboxes := tm.sandboxes
+	defaultSb := tm.defaultSandbox
 	tm.mu.RUnlock()
 
 	if client == nil {
@@ -56,6 +61,28 @@ func (tm *ToolManager) registerManifest(ctx context.Context) error {
 			SecurityLevel: int32(m.Level),
 		}
 	}
+
+	// v0.13.3: Attach sandbox config and app identity via gRPC metadata.
+	sbConfigJSON := "{}"
+	if len(sandboxes) > 0 {
+		sbMap := make(map[string]string, len(sandboxes))
+		for _, sb := range sandboxes {
+			sbMap[sb.Name] = sb.Profile
+		}
+		if b, err := json.Marshal(sbMap); err == nil {
+			sbConfigJSON = string(b)
+		}
+	}
+
+	md := metadata.Pairs(
+		"app-name", appName,
+		"sandbox-configs", sbConfigJSON,
+	)
+	if defaultSb != "" {
+		md.Append("sandbox-default", defaultSb)
+	}
+
+	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	req := &gogentv1.ManifestRequest{
 		AppName: appName,

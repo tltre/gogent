@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package gogent.v1;
+
+option go_package = "github.com/tltre/gogent/internal/grpctransport/gogentv1";
+
+// SandboxManager provides App-side sandbox lifecycle management and command
+// execution. The App communicates with the Daemon's SandboxManager service
+// to create, list, get, destroy sandboxes and execute commands within them.
+//
+// v0.13.3: Defined as proto reference. Current implementation uses HTTP
+// (see pkg/sandbox/client.go). A full gRPC implementation may follow.
+service SandboxManager {
+  // ListSandboxes returns all sandbox instances for the calling app.
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+
+  // CreateSandbox creates a new sandbox instance.
+  rpc CreateSandbox(CreateSandboxRequest) returns (SandboxInfo);
+
+  // GetSandbox returns details for a specific sandbox.
+  rpc GetSandbox(GetSandboxRequest) returns (SandboxInfo);
+
+  // DestroySandbox removes a sandbox instance.
+  rpc DestroySandbox(DestroySandboxRequest) returns (DestroySandboxResponse);
+
+  // ExecInSandbox executes a command inside a sandbox and returns the result.
+  rpc ExecInSandbox(ExecInSandboxRequest) returns (ExecResult);
+}
+
+message ListSandboxesRequest {
+  string app_name = 1;
+}
+
+message ListSandboxesResponse {
+  repeated SandboxInfo sandboxes = 1;
+}
+
+message CreateSandboxRequest {
+  string name = 1;
+  string profile = 2;
+  string lifecycle = 3; // "persistent" | "ephemeral" | "session"
+  int64 timeout_ms = 4;
+}
+
+message SandboxInfo {
+  string name = 1;
+  string profile = 2;
+  string status = 3;
+}
+
+message GetSandboxRequest {
+  string app_name = 1;
+  string sandbox_name = 2;
+}
+
+message DestroySandboxRequest {
+  string app_name = 1;
+  string sandbox_name = 2;
+}
+
+message DestroySandboxResponse {
+  bool success = 1;
+}
+
+message ExecInSandboxRequest {
+  string app_name = 1;
+  string sandbox_name = 2;
+  string code = 3;
+  string language = 4;
+  int64 timeout_ms = 5;
+  map<string, string> env = 6;
+}
+
+message ExecResult {
+  string stdout = 1;
+  string stderr = 2;
+  int32 exit_code = 3;
+  string error = 4;
+}

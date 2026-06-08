@@ -19,6 +19,12 @@ type ManifestEntry struct {
 	Level int // security level (0-2)
 }
 
+// SandboxDecl represents a sandbox instance declaration from the app config.
+type SandboxDecl struct {
+	Name    string // sandbox instance name (e.g. "workspace")
+	Profile string // references daemon's sandbox-profiles entry
+}
+
 // ToolManager manages tool execution through the daemon's ToolService.
 // It connects to the daemon gRPC server, registers the app's manifest,
 // and proxies all tool execution requests.
@@ -34,6 +40,10 @@ type ToolManager struct {
 	grpcConn    *grpctransport.Conn          // gRPC connection to daemon
 	client      gogentv1.ToolServiceClient   // ToolService gRPC client
 	hookManager *hook.HookManager            // v0.12.9: for handling hook invocations
+
+	// v0.13.3: Sandbox configuration
+	sandboxes      []SandboxDecl // sandbox instance declarations
+	defaultSandbox string        // app-level default sandbox name
 
 	dialFn func() (*grpctransport.Conn, error) // dial override for testing; nil = real dial
 }
@@ -60,6 +70,15 @@ func (tm *ToolManager) SetManifest(appName string, entries []ManifestEntry) {
 	defer tm.mu.Unlock()
 	tm.appName = appName
 	tm.manifest = entries
+}
+
+// SetSandboxConfig sets sandbox declarations and the default sandbox name.
+// Called by Builder during App construction (v0.13.3).
+func (tm *ToolManager) SetSandboxConfig(sandboxes []SandboxDecl, defaultSb string) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	tm.sandboxes = sandboxes
+	tm.defaultSandbox = defaultSb
 }
 
 // Start connects to the daemon gRPC server and registers the tool manifest.

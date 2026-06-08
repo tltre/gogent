@@ -16,19 +16,41 @@ func ParseConfig(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// ToolManifestEntry declares a tool the app intends to use.
+// The sandbox field is optional — if empty, the daemon applies default
+// fallback routing (app default → daemon defaults).
 type ToolManifestEntry struct {
 	Name          string `yaml:"name"`
 	SecurityLevel int    `yaml:"securityLevel,omitempty"`
+	Sandbox       string `yaml:"sandbox,omitempty"` // v0.13.3: sandbox instance name
+}
+
+// SandboxEntry declares a sandbox instance the app needs.
+// The profile must reference a profile defined in the daemon's sandbox.yaml.
+type SandboxEntry struct {
+	Name            string   `yaml:"name"`
+	Profile         string   `yaml:"profile"`
+	WorkDir         string   `yaml:"workDir,omitempty"`
+	AllowedCommands []string `yaml:"allowedCommands,omitempty"`
+}
+
+// DefaultSandboxConfig defines the app-level default sandbox.
+// Tools without an explicit sandbox mapping fall back to this value,
+// which then falls back to the daemon's sandbox.yaml defaults.
+type DefaultSandboxConfig struct {
+	Sandbox string `yaml:"sandbox,omitempty"` // sandbox instance name
 }
 
 type Config struct {
-	Name          string              `yaml:"name"`
-	Version       string              `yaml:"version"`
-	Interface     InterfaceConfig     `yaml:"interface,omitempty"`
-	Components    []ComponentConfig   `yaml:"components,omitempty"`
-	Defaults      map[string]string   `yaml:"defaults,omitempty"`
-	Observability ObservabilityConfig `yaml:"observability,omitempty"`
-	Tools         []ToolManifestEntry `yaml:"tools,omitempty"`
+	Name          string                `yaml:"name"`
+	Version       string                `yaml:"version"`
+	Interface     InterfaceConfig       `yaml:"interface,omitempty"`
+	Components    []ComponentConfig     `yaml:"components,omitempty"`
+	Defaults      map[string]string     `yaml:"defaults,omitempty"`
+	Observability ObservabilityConfig   `yaml:"observability,omitempty"`
+	Tools         []ToolManifestEntry   `yaml:"tools,omitempty"`
+	Sandboxes     []SandboxEntry        `yaml:"sandboxes,omitempty"`      // v0.13.3
+	Default       *DefaultSandboxConfig `yaml:"default,omitempty"`        // v0.13.3
 }
 
 type ObservabilityConfig struct {
