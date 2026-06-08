@@ -55,10 +55,15 @@ func (tm *ToolManager) registerManifest(ctx context.Context) error {
 
 	// Build request
 	pbEntries := make([]*gogentv1.ManifestEntry, len(entries))
+	toolSandboxMap := make(map[string]string)
 	for i, m := range entries {
 		pbEntries[i] = &gogentv1.ManifestEntry{
 			Name:          m.Name,
 			SecurityLevel: int32(m.Level),
+			Sandbox:       m.Sandbox,
+		}
+		if m.Sandbox != "" {
+			toolSandboxMap[m.Name] = m.Sandbox
 		}
 	}
 
@@ -74,9 +79,17 @@ func (tm *ToolManager) registerManifest(ctx context.Context) error {
 		}
 	}
 
+	toolMapJSON := "{}"
+	if len(toolSandboxMap) > 0 {
+		if b, err := json.Marshal(toolSandboxMap); err == nil {
+			toolMapJSON = string(b)
+		}
+	}
+
 	md := metadata.Pairs(
 		"app-name", appName,
 		"sandbox-configs", sbConfigJSON,
+		"sandbox-tool-map", toolMapJSON,
 	)
 	if defaultSb != "" {
 		md.Append("sandbox-default", defaultSb)

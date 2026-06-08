@@ -17,6 +17,10 @@ type AppSandboxInfo struct {
 	// DefaultSandbox is the app-level default sandbox name.
 	// Empty means fall back to daemon defaults.
 	DefaultSandbox string
+
+	// ToolSandboxMap maps tool name to sandbox instance name.
+	// Populated from tools[].sandbox fields.
+	ToolSandboxMap map[string]string
 }
 
 // ManifestStore holds per-app tool manifest registrations.

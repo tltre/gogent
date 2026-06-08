@@ -25,8 +25,8 @@ func (r *Resolver) Resolve(input string) string {
 // On-disk YAML structure
 // ---------------------------------------------------------------------------
 
-// sandboxFile represents the full structure of ~/.gogent/sandbox.yaml.
-type sandboxFile struct {
+// SandboxFile represents the full structure of ~/.gogent/sandbox.yaml.
+type SandboxFile struct {
 	Providers map[string]providerEntry `yaml:"sandbox-providers"`
 	Profiles  map[string]profileEntry  `yaml:"sandbox-profiles"`
 	Defaults  *defaultMappingsEntry    `yaml:"defaults,omitempty"`
@@ -97,9 +97,19 @@ func sandboxYamlPath() string {
 // Loading
 // ---------------------------------------------------------------------------
 
+// ParseSandboxFile unmarshals YAML data into a SandboxFile struct.
+// Exported for testing. Use ApplySandboxFile to register into a SandboxManager.
+func ParseSandboxFile(data []byte) (*SandboxFile, error) {
+	var sf SandboxFile
+	if err := yaml.Unmarshal(data, &sf); err != nil {
+		return nil, fmt.Errorf("parse sandbox.yaml: %w", err)
+	}
+	return &sf, nil
+}
+
 // LoadSandboxFile reads and parses ~/.gogent/sandbox.yaml.
 // Returns nil, nil if the file doesn't exist (defaults apply).
-func LoadSandboxFile() (*sandboxFile, error) {
+func LoadSandboxFile() (*SandboxFile, error) {
 	path := sandboxYamlPath()
 	if path == "" {
 		return nil, fmt.Errorf("cannot determine home directory")
@@ -113,7 +123,7 @@ func LoadSandboxFile() (*sandboxFile, error) {
 		return nil, fmt.Errorf("read sandbox.yaml: %w", err)
 	}
 
-	var sf sandboxFile
+	var sf SandboxFile
 	if err := yaml.Unmarshal(data, &sf); err != nil {
 		return nil, fmt.Errorf("parse sandbox.yaml: %w", err)
 	}
@@ -126,7 +136,7 @@ func LoadSandboxFile() (*sandboxFile, error) {
 //
 // The resolver is used to resolve ${VAR} references in API keys and tokens.
 // If nil, a default resolver (os.Getenv) is used.
-func ApplySandboxFile(mgr *SandboxManager, sf *sandboxFile, resolver *Resolver) (*DefaultMappings, error) {
+func ApplySandboxFile(mgr *SandboxManager, sf *SandboxFile, resolver *Resolver) (*DefaultMappings, error) {
 	if sf == nil {
 		return nil, nil
 	}

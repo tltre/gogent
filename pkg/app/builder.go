@@ -97,10 +97,11 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 	if len(b.config.Tools) > 0 {
 		entries := make([]tool.ManifestEntry, len(b.config.Tools))
 		for i, t := range b.config.Tools {
-			entries[i] = tool.ManifestEntry{
-				Name:  t.Name,
-				Level: t.SecurityLevel,
-			}
+		entries[i] = tool.ManifestEntry{
+			Name:    t.Name,
+			Level:   t.SecurityLevel,
+			Sandbox: t.Sandbox, // v0.13.4: per-tool sandbox mapping
+		}
 		}
 		tm.SetManifest(b.config.Name, entries)
 	}

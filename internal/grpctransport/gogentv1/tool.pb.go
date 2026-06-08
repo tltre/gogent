@@ -1158,6 +1158,7 @@ type ManifestEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	SecurityLevel int32                  `protobuf:"varint,2,opt,name=security_level,json=securityLevel,proto3" json:"security_level,omitempty"`
+	Sandbox       string                 `protobuf:"bytes,3,opt,name=sandbox,proto3" json:"sandbox,omitempty"` // v0.13.4: per-tool sandbox name
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1204,6 +1205,13 @@ func (x *ManifestEntry) GetSecurityLevel() int32 {
 		return x.SecurityLevel
 	}
 	return 0
+}
+
+func (x *ManifestEntry) GetSandbox() string {
+	if x != nil {
+		return x.Sandbox
+	}
+	return ""
 }
 
 type ManifestRequest struct {

@@ -15,8 +15,9 @@ import (
 // ManifestEntry represents a single tool declaration from the App's YAML
 // or WithTool BuildOption.
 type ManifestEntry struct {
-	Name  string
-	Level int // security level (0-2)
+	Name    string
+	Level   int    // security level (0-2)
+	Sandbox string // v0.13.4: per-tool sandbox instance name (from tools[].sandbox)
 }
 
 // SandboxDecl represents a sandbox instance declaration from the app config.

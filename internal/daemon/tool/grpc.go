@@ -216,18 +216,28 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 	}
 
 	// 5. Sandbox routing (v0.13.2): check if this tool should run inside a sandbox
-	// Priority: tool-level sandbox > app-level default > daemon defaults
+	// Priority: per-tool mapping > def.SandboxName > app-level default > daemon defaults
 	var execResult Result
 	sandboxName := def.SandboxName
 	if sandboxName == "" && h.sandboxMgr != nil {
-		// Fall back to app-level default, then daemon defaults
 		appName := extractAppName(stream)
 		appSandbox := h.manifestStore.GetSandbox(appName)
-		appDefault := ""
+
+		// v0.13.4: per-tool sandbox mapping from tools[].sandbox
 		if appSandbox != nil {
-			appDefault = appSandbox.DefaultSandbox
+			if name, ok := appSandbox.ToolSandboxMap[req.ToolName]; ok {
+				sandboxName = name
+			}
 		}
-		sandboxName = h.sandboxMgr.ResolveFallbackProfile(appDefault, def.Driver, h.defaults)
+
+		// Fall back to app-level default, then daemon defaults
+		if sandboxName == "" {
+			appDefault := ""
+			if appSandbox != nil {
+				appDefault = appSandbox.DefaultSandbox
+			}
+			sandboxName = h.sandboxMgr.ResolveFallbackProfile(appDefault, def.Driver, h.defaults)
+		}
 	}
 
 	if sandboxName != "" && h.sandboxMgr != nil {
@@ -486,6 +496,7 @@ func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRe
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		sbInfo := &AppSandboxInfo{
 			SandboxConfigs: make(map[string]string),
+			ToolSandboxMap: make(map[string]string),
 		}
 
 		// Parse sandbox-configs header (JSON map)
@@ -496,12 +507,20 @@ func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRe
 			}
 		}
 
+		// Parse sandbox-tool-map header (JSON map: toolName → sandboxName)
+		if toolMap := md.Get("sandbox-tool-map"); len(toolMap) > 0 {
+			var raw map[string]string
+			if err := json.Unmarshal([]byte(toolMap[0]), &raw); err == nil {
+				sbInfo.ToolSandboxMap = raw
+			}
+		}
+
 		// Parse sandbox-default header
 		if def := md.Get("sandbox-default"); len(def) > 0 {
 			sbInfo.DefaultSandbox = def[0]
 		}
 
-		if len(sbInfo.SandboxConfigs) > 0 || sbInfo.DefaultSandbox != "" {
+		if len(sbInfo.SandboxConfigs) > 0 || len(sbInfo.ToolSandboxMap) > 0 || sbInfo.DefaultSandbox != "" {
 			h.manifestStore.RegisterSandbox(req.AppName, sbInfo)
 		}
 	}
