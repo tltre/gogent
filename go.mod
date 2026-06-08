@@ -17,6 +17,7 @@ require (
 )
 
 require (
+	connectrpc.com/connect v1.19.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -25,6 +26,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/matiasinsaurralde/go-e2b v0.0.0-20260530021346-55b56c604669 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect

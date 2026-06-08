@@ -141,12 +141,24 @@ func ApplySandboxFile(mgr *SandboxManager, sf *sandboxFile, resolver *Resolver) 
 			return nil, fmt.Errorf("provider %q: %w", name, err)
 		}
 
-		p := &genericProvider{
-			name:         name,
-			providerType: SandboxType(entry.Type),
-			endpoint:     entry.Endpoint,
-			apiKey:       resolver.Resolve(entry.APIKey),
+		var p SandboxProvider
+		apiKey := resolver.Resolve(entry.APIKey)
+		switch SandboxType(entry.Type) {
+		case SandboxE2B:
+			e2b, err := NewE2BProvider(name, apiKey, entry.Endpoint)
+			if err != nil {
+				return nil, fmt.Errorf("create E2B provider %q: %w", name, err)
+			}
+			p = e2b
+		default:
+			p = &genericProvider{
+				name:         name,
+				providerType: SandboxType(entry.Type),
+				endpoint:     entry.Endpoint,
+				apiKey:       apiKey,
+			}
 		}
+
 		if err := mgr.RegisterProvider(p); err != nil {
 			return nil, fmt.Errorf("register provider %q: %w", name, err)
 		}

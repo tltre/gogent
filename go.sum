@@ -1,3 +1,5 @@
+connectrpc.com/connect v1.19.1 h1:R5M57z05+90EfEvCY1b7hBxDVOUl45PrtXtAV2fOC14=
+connectrpc.com/connect v1.19.1/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
@@ -34,6 +36,8 @@ github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/mark3labs/mcp-go v0.49.0 h1:7Ssx4d7/T86qnWoJIdye7wEEvUzv39UIbnZb/FqUZMY=
 github.com/mark3labs/mcp-go v0.49.0/go.mod h1:BflTAZAzXlrTpiO44gmjMu89n2FO56rJ9m31fp4zd5k=
+github.com/matiasinsaurralde/go-e2b v0.0.0-20260530021346-55b56c604669 h1:fj9+Z0felfIOhZSpTQbsg3CfqqE5HQXZAzCz6OS40Mo=
+github.com/matiasinsaurralde/go-e2b v0.0.0-20260530021346-55b56c604669/go.mod h1:JTycrO2WcWcZeUNZH6XIk10sV7UixdsGKOt4HQXZiiQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
