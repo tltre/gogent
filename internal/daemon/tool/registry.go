@@ -45,6 +45,7 @@ type ToolDefinition struct {
 	DefaultLvl  int               `yaml:"defaultLevel"`
 	Description string            `yaml:"description"`
 	Env         map[string]string `yaml:"env,omitempty"`
+	SandboxName string            `yaml:"sandbox,omitempty"` // v0.13.2: app-side sandbox name override
 }
 
 // ToolStats holds runtime statistics for a tool.

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tltre/gogent/internal/api"
+	"github.com/tltre/gogent/internal/daemon/sandbox"
 	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/pkg/component"
 	"gopkg.in/yaml.v3"
@@ -32,12 +33,16 @@ type Daemon struct {
 	compRetryMu           sync.Mutex           // protects retry maps
 
 	// v0.12.1: Centralized tool management.
-	toolReg       *tool.ToolRegistry   // registered tool definitions (child tools)
-	manifestStore *tool.ManifestStore // per-app manifest registrations
-	serverStore   *tool.ServerStore    // v0.12.8: MCP server metadata
-	resolver      *tool.EnvResolver    // v0.12.6: credential resolver
-	grpcSrv       *GrpcServer          // gRPC ToolService server
-	grpcReady     bool                 // true after StartGrpc() completes
+	toolReg       *tool.ToolRegistry    // registered tool definitions (child tools)
+	manifestStore *tool.ManifestStore  // per-app manifest registrations
+	serverStore   *tool.ServerStore     // v0.12.8: MCP server metadata
+	resolver      *tool.EnvResolver     // v0.12.6: credential resolver
+	grpcSrv       *GrpcServer           // gRPC ToolService server
+	grpcReady     bool                  // true after StartGrpc() completes
+
+	// v0.13.2: Sandbox management.
+	sandboxMgr      *sandbox.SandboxManager
+	sandboxDefaults *sandbox.DefaultMappings
 }
 
 // NewDaemon creates a new Daemon with an empty AppStore and the given base
@@ -77,6 +82,20 @@ func NewDaemon(basePort int, credentialsPath ...string) *Daemon {
 		resolver:              resolver,
 		serverStore:           serverStore,
 	}
+
+	// v0.13.2: Initialize sandbox system.
+	d.sandboxMgr = sandbox.NewSandboxManager()
+	if sf, err := sandbox.LoadSandboxFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "[daemon] warn: load sandbox.yaml: %v\n", err)
+	} else if sf != nil {
+		defaults, err := sandbox.ApplySandboxFile(d.sandboxMgr, sf, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[daemon] warn: apply sandbox.yaml: %v\n", err)
+		} else {
+			d.sandboxDefaults = defaults
+		}
+	}
+
 	d.RecoverApps()
 	return d
 }
@@ -185,6 +204,11 @@ func (d *Daemon) StartLifecycle(ctx context.Context) {
 	}
 }
 
+// SandboxManager returns the daemon's sandbox manager (v0.13.2).
+func (d *Daemon) SandboxManager() *sandbox.SandboxManager {
+	return d.sandboxMgr
+}
+
 // Resolver returns the daemon's credential resolver (v0.12.6).
 func (d *Daemon) Resolver() *tool.EnvResolver {
 	return d.resolver
@@ -207,7 +231,7 @@ func (d *Daemon) StartCredentialWatch(ctx context.Context) {
 // The gRPC port is basePort+1. This is called explicitly from runDaemon
 // after other subsystems are ready.
 func (d *Daemon) StartGrpc() {
-		d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore, d.resolver, d.serverStore)
+	d.grpcSrv = NewGrpcServer(d.basePort, d.toolReg, d.manifestStore, d.resolver, d.serverStore, d.sandboxMgr, d.sandboxDefaults)
 	if d.grpcSrv != nil {
 		d.grpcSrv.Start()
 		d.grpcReady = true
@@ -706,6 +730,16 @@ func (d *Daemon) StopApp(name string) error {
 	}
 	RemoveAppPortFile(name)
 
+	// v0.13.2: Clean up sandbox instances.
+	d.manifestStore.Unregister(name)
+	if d.sandboxMgr != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := d.sandboxMgr.DestroyAppSandboxes(ctx, name); err != nil {
+			fmt.Fprintf(os.Stderr, "[daemon] warn: cleanup sandboxes for %s: %v\n", name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -731,6 +765,14 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 			}
 			d.compStore.Unregister(comp.Name)
 			RemoveComponentPortFile(info.Name, comp.Name)
+		}
+
+		// v0.13.2: Clean up sandbox instances.
+		d.manifestStore.Unregister(info.Name)
+		if d.sandboxMgr != nil {
+			if err := d.sandboxMgr.DestroyAppSandboxes(ctx, info.Name); err != nil {
+				errs = append(errs, fmt.Errorf("cleanup sandboxes for %s: %w", info.Name, err))
+			}
 		}
 
 		// Unregister from store (best-effort).

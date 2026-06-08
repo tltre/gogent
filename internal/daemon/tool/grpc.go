@@ -2,15 +2,18 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/tltre/gogent/internal/daemon/sandbox"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
 )
 
@@ -20,16 +23,17 @@ type Handler struct {
 	registry      *ToolRegistry
 	manifestStore *ManifestStore
 	serverStore   *ServerStore
-	runner        *McpRunner        // v0.12.8: unified MCP runner (process+http)
-	lifecycle     *LifecycleManager // v0.12.8: health check + auto-restart
-	runners       map[string]Runner // key: driver type ("builtin"|"process"|"http")
+	runner        *McpRunner         // v0.12.8: unified MCP runner (process+http)
+	lifecycle     *LifecycleManager  // v0.12.8: health check + auto-restart
+	runners       map[string]Runner  // key: driver type ("builtin"|"process"|"http")
 	runnersMu     sync.RWMutex
+	sandboxMgr    *sandbox.SandboxManager // v0.13.2: sandbox lifecycle & routing
+	defaults      *sandbox.DefaultMappings // v0.13.2: daemon-level fallback profiles
 }
 
 // NewHandler creates a ToolService gRPC handler backed by the given registry.
-// It initializes runners for builtin (BuiltinRunner) and MCP (McpRunner),
-// and registers built-in handler functions.
-func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStore *ServerStore) *Handler {
+// If sandboxMgr is nil, sandbox routing is disabled (tools run directly).
+func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStore *ServerStore, sandboxMgr *sandbox.SandboxManager, defaults *sandbox.DefaultMappings) *Handler {
 	mcpRunner := NewMcpRunner(serverStore, registry)
 
 	h := &Handler{
@@ -39,6 +43,8 @@ func NewHandler(registry *ToolRegistry, manifestStore *ManifestStore, serverStor
 		runner:        mcpRunner,
 		lifecycle:     NewLifecycleManager(serverStore, mcpRunner),
 		runners:       make(map[string]Runner),
+		sandboxMgr:    sandboxMgr,
+		defaults:      defaults,
 	}
 
 	// Register driver runners
@@ -209,16 +215,68 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 		return nil // hook already sent the error result
 	}
 
-	// 5. Extract params and dispatch to driver-specific Runner
+	// 5. Sandbox routing (v0.13.2): check if this tool should run inside a sandbox
+	// Priority: tool-level sandbox > app-level default > daemon defaults
 	var execResult Result
-	runner, ok := h.getRunner(def.Driver)
-	if !ok {
-		execResult = Result{IsError: true, ErrorMsg: "unknown driver: " + def.Driver}
+	sandboxName := def.SandboxName
+	if sandboxName == "" && h.sandboxMgr != nil {
+		// Fall back to app-level default, then daemon defaults
+		appName := extractAppName(stream)
+		appSandbox := h.manifestStore.GetSandbox(appName)
+		appDefault := ""
+		if appSandbox != nil {
+			appDefault = appSandbox.DefaultSandbox
+		}
+		sandboxName = h.sandboxMgr.ResolveFallbackProfile(appDefault, def.Driver, h.defaults)
+	}
+
+	if sandboxName != "" && h.sandboxMgr != nil {
+		// Sandboxed execution
+		appName := extractAppName(stream)
+		appSandbox := h.manifestStore.GetSandbox(appName)
+
+		// Resolve profile name: sandbox config → profile mapping
+		profileName := ""
+		if appSandbox != nil {
+			if p, ok := appSandbox.SandboxConfigs[sandboxName]; ok {
+				profileName = p
+			}
+		}
+		if profileName == "" {
+			// Fallback: use sandboxName as profile name directly
+			profileName = sandboxName
+		}
+
+		cfg := &sandbox.SandboxConfig{
+			Name:        sandboxName,
+			ProfileName: profileName,
+		}
+
+		sb, err := h.sandboxMgr.GetOrCreateForApp(stream.Context(), appName, cfg)
+		if err != nil {
+			execResult = Result{IsError: true, ErrorMsg: "sandbox: " + err.Error()}
+		} else {
+			sbResult, sbErr := sb.Execute(stream.Context(), sandbox.ExecRequest{
+				Code:     formatCommand(def, params),
+				Language: "sh",
+			})
+			if sbErr != nil {
+				execResult = Result{IsError: true, ErrorMsg: def.Name + ": " + sbErr.Error()}
+			} else {
+				execResult = sandboxResultToExecResult(sbResult)
+			}
+		}
 	} else {
-		var execErr error
-		execResult, execErr = runner.Execute(stream.Context(), def, params)
-		if execErr != nil {
-			execResult = Result{IsError: true, ErrorMsg: def.Name + ": " + execErr.Error()}
+		// Direct execution (no sandbox)
+		runner, ok := h.getRunner(def.Driver)
+		if !ok {
+			execResult = Result{IsError: true, ErrorMsg: "unknown driver: " + def.Driver}
+		} else {
+			var execErr error
+			execResult, execErr = runner.Execute(stream.Context(), def, params)
+			if execErr != nil {
+				execResult = Result{IsError: true, ErrorMsg: def.Name + ": " + execErr.Error()}
+			}
 		}
 	}
 
@@ -249,6 +307,20 @@ func (h *Handler) ExecuteTool(stream gogentv1.ToolService_ExecuteToolServer) err
 	// 8. Record invocation
 	h.registry.RecordInvocation(req.ToolName, !execResult.IsError)
 	return nil
+}
+
+// SandboxManager returns the handler's sandbox manager, or nil.
+func (h *Handler) SandboxManager() *sandbox.SandboxManager {
+	return h.sandboxMgr
+}
+
+// CleanupAppSandboxes destroys all sandbox instances for the given app.
+// Called when the app disconnects.
+func (h *Handler) CleanupAppSandboxes(ctx context.Context, appName string) error {
+	if h.sandboxMgr == nil {
+		return nil
+	}
+	return h.sandboxMgr.DestroyAppSandboxes(ctx, appName)
 }
 
 // handleHook sends a HookInvocation and waits for the App's verdict.
@@ -407,8 +479,89 @@ func (h *Handler) RegisterManifest(ctx context.Context, req *gogentv1.ManifestRe
 
 	h.manifestStore.Register(req.AppName, req.Tools)
 
+	// v0.13.2: Parse sandbox configuration from gRPC metadata headers.
+	// Format:
+	//   sandbox-configs: {"ws":"restricted-shell","net":"net-access"}
+	//   sandbox-default: "ws"
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		sbInfo := &AppSandboxInfo{
+			SandboxConfigs: make(map[string]string),
+		}
+
+		// Parse sandbox-configs header (JSON map)
+		if configs := md.Get("sandbox-configs"); len(configs) > 0 {
+			var raw map[string]string
+			if err := json.Unmarshal([]byte(configs[0]), &raw); err == nil {
+				sbInfo.SandboxConfigs = raw
+			}
+		}
+
+		// Parse sandbox-default header
+		if def := md.Get("sandbox-default"); len(def) > 0 {
+			sbInfo.DefaultSandbox = def[0]
+		}
+
+		if len(sbInfo.SandboxConfigs) > 0 || sbInfo.DefaultSandbox != "" {
+			h.manifestStore.RegisterSandbox(req.AppName, sbInfo)
+		}
+	}
+
 	return &gogentv1.ManifestResponse{
 		Accepted: allAccepted,
 		Tools:    statuses,
 	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// v0.13.2 helpers
+// ---------------------------------------------------------------------------
+
+// extractAppName reads the app name from gRPC metadata.
+// Falls back to "unknown" if not set.
+func extractAppName(stream gogentv1.ToolService_ExecuteToolServer) string {
+	md, ok := metadata.FromIncomingContext(stream.Context())
+	if !ok {
+		return "unknown"
+	}
+	vals := md.Get("app-name")
+	if len(vals) == 0 {
+		return "unknown"
+	}
+	return vals[0]
+}
+
+// formatCommand converts tool params into a command string for sandbox execution.
+// For shell tools, it extracts the "cmd" param. For other tools, it falls back
+// to the tool name itself.
+func formatCommand(def *ToolDefinition, params map[string]any) string {
+	if def.Name == "shell" {
+		if cmd, ok := params["cmd"].(string); ok {
+			return cmd
+		}
+	}
+	if def.Name == "filesystem.read" {
+		if path, ok := params["path"].(string); ok {
+			return "cat " + path
+		}
+	}
+	return def.Name
+}
+
+// sandboxResultToExecResult converts a sandbox.ExecResult to a tool.Result.
+func sandboxResultToExecResult(sr sandbox.ExecResult) Result {
+	output := map[string]any{
+		"stdout":   sr.Stdout,
+		"stderr":   sr.Stderr,
+		"exitcode": sr.ExitCode,
+	}
+	isError := sr.Error != nil || sr.ExitCode != 0
+	errMsg := ""
+	if sr.Error != nil {
+		errMsg = sr.Error.Error()
+	}
+	return Result{
+		Output:   output,
+		IsError:  isError,
+		ErrorMsg: errMsg,
+	}
 }
