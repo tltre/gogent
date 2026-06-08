@@ -49,6 +49,11 @@ func NewGrpcServer(basePort int, registry *tool.ToolRegistry, manifestStore *too
 	handler := tool.NewHandler(registry, manifestStore, serverStore, sandboxMgr, sandboxDefaults)
 	gogentv1.RegisterToolServiceServer(s, handler)
 
+	// v0.13.3: SandboxManager service (app-side sandbox CRUD + exec)
+	if sandboxMgr != nil {
+		gogentv1.RegisterSandboxManagerServer(s, &sandboxManagerGRPC{sandboxMgr: sandboxMgr})
+	}
+
 	// Reflection for debugging (grpc_cli, grpcurl, etc.)
 	reflection.Register(s)
 
