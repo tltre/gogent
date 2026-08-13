@@ -1,8 +1,17 @@
 # Provider 模块设计方案（v0.14.x）
 
 > 本文档描述 gogent 框架 Provider 模块的多供应商支持设计，涵盖现状分析、目标架构、路线选择、凭证管理与待决策问题。
-> 状态：**设计中（v0.14.x 规划）**
+> 状态：**设计中（v0.14.1 实施中）**
 > 关联版本：v0.13.x（当前基线）
+>
+> **已定稿决策**：
+> - 路线：**路线 2**（Process/HTTP 统一由 ProviderManager 管理，终态）
+> - 架构模式：**HookManager 模式**（ProviderManager 本身是 Component，`GetType()` 返回 `ComponentProvider`，无需新增 ComponentType）
+> - 配置机制：**黑名单**（默认提供所有 native 引擎，用户用 `exclude` 排除）
+> - YAML 只声明**连接可能性**，不含 apiKey/model（终端用户凭证与偏好运行时决定，属凭证管理阶段）
+> - `ModelInfo` 扩展：新增 `DisplayName` + `Models` 字段
+> - `DefaultProvider` / `ProviderComponent`：保留文件，标记 deprecated，后续统一清理
+> - ProcessProvider 配置字段：结构先按完整字段定型，v0.14.1 阶段 process/http 驱动保持现状，后续按问题 C 调整
 
 ---
 
@@ -145,16 +154,16 @@ resolver.Resolve("${OPENAI_API_KEY}")   // → ~/.gogent/credentials.yaml → �
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ YAML 配置（App 开发者编写 — 声明"支持哪些供应商"）              │
-│  provider-openai   provider-gemini   provider-claude         │
-│  provider-openrouter  ...                                    │
+│ YAML 配置（App 开发者编写 — 声明"连接可能性"）                │
+│  provider-main: { exclude: [...] }   ← 黑名单，默认全开      │
+│  provider-remote: { target: ... }    ← process/http 显式声明 │
 └──────────────────────┬──────────────────────────────────────┘
                        │ Builder 解析
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Registry                                                    │
-│  ComponentProvider: [openai, gemini, claude, ...]           │
-│  ComponentProviderManager: [manager]  (新增，待定方案)       │
+│  ComponentProvider: [provider-manager]   ← 唯一 provider 组件 │
+│    └── ProviderManager 内部持有 openai/gemini/claude/...     │
 └──────────────────────┬──────────────────────────────────────┘
                        │ Interface.Run(ctx, reg)
                        ▼
@@ -183,46 +192,130 @@ resolver.Resolve("${OPENAI_API_KEY}")   // → ~/.gogent/credentials.yaml → �
 └──────────┴──────────┴──────────┴──────────────┴───────────┘
 ```
 
-### 3.2 ProviderManager 定位
+### 3.2 ProviderManager 定位（已定稿：HookManager 模式）
+
+**架构模式**（对齐 `pkg/hook/manager.go`）：ProviderManager **本身是 Component**——嵌入 `component.BasicComponent`，直接实现 `GetType/Initialize/Start/Stop/Dependencies`。单个 provider 实例（OpenAI、Gemini、Process…）是普通 `IProvider` 对象，通过 `Register()` 注册进 Manager，**不进 Registry**。
 
 ```
-ProviderManager = 所有 Provider 实例的统一查询目录
+ProviderManager = 所有 Provider 实例的统一查询目录，且自身是 Component
 
-职责边界：
+关键设计点：
+  ✅ GetType() 返回 component.ComponentProvider —— 无需新增 ComponentType
+  ✅ AgentRuntime.Dependencies()["provider"] 依赖声明原样有效
+  ✅ 子项（IProvider）不进 Registry，由 Manager 统一持有
+  ✅ 与 HookManager 逐点对齐：嵌入 BasicComponent / 生命周期日志 / Register 注册
   ✅ 管理 Provider 的注册 / 注销 / 发现
   ✅ 为 Interface 层提供 ProviderInfo 查询（展示给终端用户）
   ✅ 为 AgentCore 提供按名选取
-  ✅ 可选：统一健康检查、模型索引
   ❌ 不包装 Generate()/Stream() 调用（那是 AgentCore 的职责）
   ❌ 不做请求/响应格式转换（那是各 Provider 实现的职责）
   ❌ 不管理凭证（CredentialStore 是独立抽象）
 ```
 
-### 3.3 预期接口设计（草案）
+### 3.3 预期接口设计（定稿）
 
 ```go
-// ProviderManager 草案
+// pkg/provider/manager.go — ProviderManager（HookManager 模板）
 type ProviderManager struct {
-    providers map[string]IProvider
+    component.BasicComponent
+    mu        sync.RWMutex
+    providers map[string]IProvider   // 以引擎名为 key："openai"、"gemini"…
 }
 
-func (pm *ProviderManager) Register(name string, p IProvider)
-func (pm *ProviderManager) Unregister(name string)
-func (pm *ProviderManager) Get(name string) IProvider
-func (pm *ProviderManager) List() []ProviderInfo      // Interface 层展示
-func (pm *ProviderManager) Health(name string) error  // 可选
+func NewManagerComponent(name string) *ProviderManager
 
+// Component 生命周期（照抄 HookManager 模板）
+func (m *ProviderManager) GetType() component.ComponentType { return component.ComponentProvider }
+func (m *ProviderManager) Initialize(ctx, reg) error
+func (m *ProviderManager) Start(ctx) error
+func (m *ProviderManager) Stop(ctx) error
+func (m *ProviderManager) Dependencies() map[string]component.DependencySpec
+
+// 业务方法
+func (m *ProviderManager) Register(name string, p IProvider) error
+func (m *ProviderManager) Unregister(name string) error
+func (m *ProviderManager) Get(name string) IProvider
+func (m *ProviderManager) List() []ProviderInfo      // Interface 层展示
+
+// pkg/provider/config.go — 引擎注册表（database/sql 风格）
+type EngineFactory func() (IProvider, error)
+
+func RegisterEngine(name string, f EngineFactory) error
+func CreateEngine(name string) (IProvider, error)   // 未知引擎 → ErrUnknownEngine
+func RegisteredEngines() []string                    // 已注册引擎列表
+func IsEngineRegistered(name string) bool
+
+// 展示结构
 type ProviderInfo struct {
-    Name        string   // "provider-openai"
-    Engine      string   // "openai"
+    Name        string   // "openai" — 引擎标识（注册名）
     DisplayName string   // "OpenAI" — 终端用户可见
-    Models      []string // ["gpt-4o", "gpt-4o-mini"]
+    Models      []string // 能力声明（该引擎支持的模型），供用户选择
 }
 ```
 
+**Builder 注册语义**：
+
+```go
+// native 路径：遍历引擎注册表，exclude 过滤后全部注册进 Manager
+for _, engine := range provider.RegisteredEngines() {
+    if excluded[engine] {
+        continue
+    }
+    impl, err := provider.CreateEngine(engine)
+    if err != nil {
+        return err
+    }
+    b.providerManager.Register(engine, impl)   // 以引擎名为注册名
+}
+```
+
+### 3.4 YAML 配置设计（定稿：黑名单机制）
+
+**设计原则**：
+
+| 原则 | 说明 |
+|------|------|
+| 默认全开 | 框架内置的所有 native 引擎默认启用，无需逐个声明 |
+| 黑名单排除 | 用户用 `exclude` 字段排除不需要的引擎（白名单的逆向） |
+| 只声明连接可能性 | YAML 只描述"app 支持连接哪些供应商"，不含 apiKey/model |
+| 能力 vs 偏好 | 引擎支持的模型列表（能力）进代码；具体选哪个模型/哪个 key（偏好）运行时决定 |
+
+**YAML 结构**：
+
+```yaml
+name: my-agent
+version: "1.0.0"
+
+interface:
+  type: cli
+
+components:
+  # native provider：默认全开所有内置引擎，exclude 黑名单排除
+  - name: "provider-main"
+    type: "provider"
+    driver: "native"
+    config:
+      exclude: ["openai", "openrouter"]    # 可选；留空则全部启用
+
+  # 远程 provider：显式声明（需要 target，无法默认）
+  - name: "provider-remote"
+    type: "provider"
+    driver: "process"
+    config:
+      target: "localhost:9092"
+```
+
+**结构要点**：
+- **apiKey / model / endpoint / timeout 全部移出 YAML** —— 属于终端用户凭证与偏好，进 CredentialStore（v0.14.5 凭证管理阶段）
+- native provider 为**单一组件条目**（对应 ProviderManager），配置仅 `exclude`
+- process/http 保持**显式声明**（`target` 是框架级连接信息，无法默认，v0.14.1 暂保持现状，问题 C 后续统一）
+- 引擎由"默认全开"机制确定，YAML 无需 `engine` 字段
+
 ---
 
-## 四、两条路线对比（待决策）
+## 四、两条路线对比（已定稿：路线 2）
+
+> 本章记录设计时的路线对比分析。**结论：路线 2（统一管理）已定稿**，ProviderManager 采用 HookManager 模式实现（详见 3.2）。
 
 ### 4.1 路线 1：Process/HTTP 绕过 ProviderManager
 
@@ -287,30 +380,32 @@ ProviderManager
 | 与当前架构冲突           | 🟢 几乎零改动   | 🟡 需新增 Manager 注册机制 |
 
 
-**推荐方向：路线 2（统一管理）**，理由：单入口、支持 Router 扩展、配置一致，符合框架"可插拔可替换"的核心哲学。最终决策待问题清单确认后定稿。
+**推荐方向：路线 2（统一管理）**，理由：单入口、支持 Router 扩展、配置一致，符合框架"可插拔可替换"的核心哲学。**✅ 已定稿。**
+
+**v0.14.1 实施范围界定**：native 路径先行（ProviderManager + 引擎注册表 + exclude 黑名单）；process/http 驱动暂保持现有独立行为（不阻塞基础设施落地），问题 C 在后续阶段统一改造。
 
 ---
 
 ## 五、Provider 实现策略
 
-### 5.1 代码布局（草案）
+### 5.1 代码布局（定稿：v0.14.1 范围）
 
 ```
 pkg/provider/
 ├── provider.go              # IProvider 接口 + 共享类型（不变）
-├── component.go             # ProviderComponent 封装（微调）
-├── process.go               # ProcessProvider（不变或适配）
-├── default.go               # DefaultProvider（保留向后兼容或移除）
-├── manager.go               # ProviderManager（新增）
-├── config.go                # 统一配置模型 + ProviderFactory（新增）
-├── errors.go                # 统一错误类型（新增）
-├── models.go                # 模型信息注册表（新增）
-├── openai.go                # OpenAIProvider（新增）
-├── openai_compat.go         # OpenAICompatibleProvider（复用 OpenAI 核心）
-├── gemini.go                # GeminiProvider（新增）
-├── anthropic.go             # AnthropicProvider（新增）
-├── credentials.go           # CredentialStore 接口 + 默认实现（新增）
-└── *_test.go                # 各 Provider 单元测试（mock HTTP）
+├── component.go             # ProviderComponent — deprecated（v0.14.1 标记，后续清理）
+├── process.go               # ProcessProvider（v0.14.1 不动，问题 C 后续调整）
+├── default.go               # DefaultProvider — deprecated（保留向后兼容）
+├── manager.go               # ProviderManager — Component + Register/Get/List ✅ v0.14.1
+├── config.go                # 引擎注册表 RegisterEngine/CreateEngine ✅ v0.14.1
+├── errors.go                # 哨兵错误（ErrUnknownEngine 等）✅ v0.14.1
+├── models.go                # ModelInfo 扩展（DisplayName+Models）✅ v0.14.1
+├── openai.go                # OpenAIProvider（v0.14.2）
+├── openai_compat.go         # OpenAICompatibleProvider（v0.14.2）
+├── gemini.go                # GeminiProvider（v0.14.3）
+├── anthropic.go             # AnthropicProvider（v0.14.4）
+├── credentials.go           # CredentialStore 接口 + 默认实现（v0.14.5）
+└── *_test.go                # 各 Provider 单元测试
 ```
 
 ### 5.2 引擎与依赖
@@ -427,30 +522,35 @@ builder.Build(
 
 | 信息               | 存放位置                                        | 谁写入          |
 | ---------------- | ------------------------------------------- | ------------ |
-| 支持哪些供应商          | YAML 配置（app 仓库）                             | App 开发者      |
+| 连接可能性（黑名单 exclude） | YAML 配置（app 仓库）                             | App 开发者      |
 | API Key 等密钥      | CredentialStore（keyring / credentials.yaml） | 终端用户（首次运行引导） |
-| 默认模型名 / endpoint | YAML 配置                                     | App 开发者      |
+| 默认模型名 / endpoint | 终端用户偏好（运行时）                                | 终端用户        |
 
 
 **必须允许 App 开发者自定义凭证管理行为**——通过 `WithCredentialStore(BuildOption)` 注入，框架提供默认实现。
 
+> ⚠️ 注意：`默认模型名 / endpoint` 不再进 YAML。模型与 key 均属终端用户偏好与凭证，由运行时选择 / CredentialStore 提供（v0.14.5）。YAML 只保留黑名单 exclude（连接可能性）与 process/http 的 target（框架级连接信息）。
+
 ---
 
-## 七、未解决问题清单（待决策）
+## 七、未解决问题清单
 
-### 问题 A：ProviderManager 的填充/注入机制
+> **已定稿项**标注 ✅；**仍待决策项**标注 ⏳。
+
+### 问题 A：ProviderManager 的填充/注入机制 — ✅ 已定稿
+
+**决策**：采用 HookManager 模式（A-1 变体）——**ProviderManager 本身是 Component**，嵌入 `BasicComponent`，`GetType()` 返回现有 `ComponentProvider` 类型（**无需新增 ComponentType**）。单个 provider 实例以 `IProvider` 对象通过 `Register()` 注册进 Manager，不进 Registry。`AgentRuntime.Dependencies()` 的 `"provider"` 依赖声明原样有效。
+
+对比记录：
 
 
-| 方案  | 描述                                                                                             | 优点                                       | 缺点                                                   |
-| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- |
-| A-1 | ProviderManager 作为独立 Component（新增 `ComponentProviderManager` 类型），Provider 声明依赖它，Initialize 时注册 | 依赖关系清晰、拓扑排序保证顺序、Interface 可从 Registry 获取 | 需改 component.go、改动最大                                 |
-| A-2 | Builder 注入：`ProviderComponent.SetManager(pm)`                                                  | 改动最小、Builder 已有很多类似模式                    | ProviderComponent 多一个公开方法、Interface 获取 Manager 需额外路径 |
-| A-3 | 全局注册（`database/sql` 风格）                                                                        | 极简                                       | 全局状态影响测试隔离、多 App 实例冲突                                |
+| 方案  | 描述                                                                                             | 结论   |
+| --- | ---------------------------------------------------------------------------------------------- | ---- |
+| A-1 | ProviderManager 作为独立 Component（新增 `ComponentProviderManager` 类型），Provider 声明依赖它，Initialize 时注册 | ⚠️ 变体采用：Manager 自身即 Component，复用 `ComponentProvider` 类型 |
+| A-2 | Builder 注入：`ProviderComponent.SetManager(pm)`                                                  | ❌ 否决 |
+| A-3 | 全局注册（`database/sql` 风格）                                                                        | ❌ 否决（全局状态影响测试隔离、多 App 实例冲突） |
 
-
-**推荐倾向**：A-1 最符合框架"组件化 + 依赖声明"哲学；A-2 实现成本最低。**待决策。**
-
-### 问题 B：凭证存储的控制权
+### 问题 B：凭证存储的控制权 — ⏳ 待决策（v0.14.5 前定）
 
 
 | 方案  | 描述                                                            |
@@ -462,9 +562,11 @@ builder.Build(
 
 **待决策。**
 
-### 问题 C：ProcessProvider 的配置字段去留
+### 问题 C：ProcessProvider 的配置字段去留 — ✅ 部分定稿
 
-当前 `ProcessProviderConfig` 忽略了 YAML `config.endpoint/apiKey/model`。走路线 2 后：
+**决策（v0.14.1）**：`Config` 结构按完整字段定型，但 v0.14.1 阶段 process/http 驱动**保持现状**（`ProcessProviderConfig` 仅取 target），不阻塞 native 路径落地。后续阶段再按完整字段调整 ProcessProvider。
+
+待后续阶段决策的选项：
 
 ```
 C-a：这些字段对 process 驱动仍无意义（ProcessProvider 仅走 gRPC），忽略
@@ -472,9 +574,7 @@ C-b：ProcessProvider 同时支持 REST API 直连（成为"远程 REST Provider
 C-c：拆分为两个独立实现：ProcessProvider（gRPC）+ RemoteRESTProvider
 ```
 
-**待决策。**
-
-### 问题 D：Provider 切换粒度
+### 问题 D：Provider 切换粒度 — ⏳ 待决策（v0.14.6 前定）
 
 ```
 D-a：会话级切换（CLI 会话状态，简单）
@@ -484,7 +584,7 @@ D-c：两者都支持（会话级默认 + 消息级覆盖）
 
 **待决策。**
 
-### 问题 E：RouterProvider（聚合/容灾）是否纳入 v0.14.x
+### 问题 E：RouterProvider（聚合/容灾）是否纳入 v0.14.x — ⏳ 待决策
 
 ```
 E-a：纳入 —— 提供 failover / 负载均衡 / 按权重路由
@@ -493,9 +593,9 @@ E-b：延后到 v0.15.x —— 先做单实例原生 Provider 的多路注册
 
 **待决策。**（注意：RouterProvider 是框架内部的透明容灾机制，不是与 OpenRouter SaaS 竞争）
 
-### 问题 F：IProvider 接口是否微调
+### 问题 F：IProvider 接口是否微调 — ✅ 已定稿（扩展）
 
-现状 `ModelInfo()` 返回 `ModelInfo{Name, Provider, ContextSize, SupportsTool, SupportsVision}`。是否需要扩展：
+**决策**：`ModelInfo` 扩展 `DisplayName` + `Models` 字段：
 
 ```go
 type ModelInfo struct {
@@ -505,42 +605,44 @@ type ModelInfo struct {
     ContextSize    int
     SupportsTool   bool
     SupportsVision bool
-    Models         []string  // 可用模型列表
+    Models         []string  // 可用模型列表（能力声明）
 }
 ```
 
-**待决策。**
+### 问题 G：DefaultProvider 的去留 — ✅ 已定稿（保留 + deprecated）
 
-### 问题 G：DefaultProvider 的去留
+**决策**：保留 `DefaultProvider` 与 `ProviderComponent` 文件，标记 deprecated，Builder 不再使用（`WithProvider` 同步改为注册进 Manager）。后续确认无用户依赖后统一清理。
 
-现状 `DefaultProvider`（函数回调注入的占位）：
+### 问题 H：Provider 配置机制（白名单 vs 黑名单） — ✅ 已定稿（黑名单）
 
-- 保留：向后兼容（现有用户可能通过 `SetGenerate/SetStream/SetModelInfo` 注入）
-- 移除：无真实用户场景，回归到 `TODO: default provider` 语义
-
-**待决策。**
+**决策**：采用**黑名单机制**——框架默认提供所有 native 引擎，用户用 `exclude` 字段排除。YAML 只声明"连接可能性"，apiKey/model 全部移出（属凭证管理）。详见 3.4。
 
 ---
 
-## 八、实施路线图（草案）
+## 八、实施路线图
 
 ```
-v0.14.1 — Provider 基础设施
-    ├── pkg/provider/{errors,config,models}.go    共享类型
-    ├── pkg/provider/manager.go                   ProviderManager 骨架
-    ├── pkg/app/builder.go                        新增 native driver engine 分发
-    └── 解决 问题 A（注入机制）
+v0.14.1 — Provider 基础设施 ✅ 当前阶段
+    ├── pkg/provider/errors.go                     哨兵错误（ErrUnknownEngine 等）
+    ├── pkg/provider/models.go                     ModelInfo 扩展（DisplayName+Models）
+    ├── pkg/provider/config.go                     引擎注册表（RegisterEngine/CreateEngine/RegisteredEngines）
+    ├── pkg/provider/manager.go                    ProviderManager（HookManager 模板）+ ProviderInfo
+    ├── pkg/provider/component.go                  标记 deprecated
+    ├── pkg/app/builder.go                         buildProvider native 路径（ensureProviderManager + exclude 黑名单）
+    ├── pkg/provider/manager_test.go               Register/Get/List/Unregister 单测（mock IProvider）
+    ├── pkg/provider/config_test.go                引擎注册表 + exclude 过滤 + 未知引擎报错测试
+    └── 已定稿：问题 A / F / G / H；问题 C 部分（process 保持现状）
 
 v0.14.2 — OpenAI + OpenAI 兼容
-    ├── pkg/provider/openai.go                    OpenAI + OpenAICompatible
+    ├── pkg/provider/openai.go                    OpenAI + OpenAICompatible（注册进引擎注册表）
     └── pkg/provider/openai_test.go
 
 v0.14.3 — Gemini
-    ├── pkg/provider/gemini.go                    Gemini REST API
+    ├── pkg/provider/gemini.go                    Gemini REST API（注册进引擎注册表）
     └── pkg/provider/gemini_test.go
 
 v0.14.4 — Anthropic
-    ├── pkg/provider/anthropic.go                 Claude API
+    ├── pkg/provider/anthropic.go                 Claude API（注册进引擎注册表）
     └── pkg/provider/anthropic_test.go
 
 v0.14.5 — 凭证管理
@@ -550,12 +652,15 @@ v0.14.5 — 凭证管理
 v0.14.6 — Interface 层多 Provider 交互
     ├── pkg/iface/cli/cmd_chat.go                 /provider 命令
     ├── pkg/iface/cli/cmd_run.go                  --provider flag
-    └── pkg/iface/cli/cmd_provider.go             新命令实现
+    ├── pkg/iface/cli/cmd_provider.go             新命令实现
+    └── 解决 问题 D（切换粒度）
 
-v0.14.7 — AgentCore 路由 + 文档
+v0.14.7 — AgentCore 路由 + Process 统一改造
     ├── pkg/agentcore/agent.go                    多 Provider 路由
     ├── pkg/agentcore/component.go                Dependencies 标记 Multiple=true
-    └── tests/provider/                           端到端集成测试
+    ├── pkg/provider/process.go                   ProcessProvider 按问题 C 改造（C-b/C-c）
+    ├── tests/provider/                           端到端集成测试
+    └── 解决 问题 E（RouterProvider 去留）
 ```
 
 ---
