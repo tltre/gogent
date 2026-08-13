@@ -77,8 +77,10 @@ func TestBuildNativeProvidersExclude(t *testing.T) {
 	}
 
 	infos := mgr.List()
-	if len(infos) != 2 {
-		t.Fatalf("List() len = %d, want 2 (excluded engine b)", len(infos))
+	// The openai engine is registered via init() in this binary, plus the
+	// three mock engines. test-engine-b must be excluded; the rest remain.
+	if len(infos) < 2 {
+		t.Fatalf("List() len = %d, want >= 2 (mock a+c)", len(infos))
 	}
 	got := map[string]bool{}
 	for _, info := range infos {
@@ -89,6 +91,9 @@ func TestBuildNativeProvidersExclude(t *testing.T) {
 	}
 	if got["test-engine-b"] {
 		t.Fatal("List() includes excluded engine test-engine-b")
+	}
+	if !got["openai"] {
+		t.Error("List() missing openai engine (registered via init)")
 	}
 }
 
