@@ -28,6 +28,11 @@ const OpenAIEnvAPIKey = "OPENAI_API_KEY"
 // OpenAIEnvModel optionally overrides the default model via environment.
 const OpenAIEnvModel = "OPENAI_MODEL"
 
+// OpenAIEnvBaseURL overrides the API base URL via environment. Useful for
+// enterprise proxies, self-hosted gateways, and integration tests pointing at
+// a mock server.
+const OpenAIEnvBaseURL = "OPENAI_BASE_URL"
+
 // OpenAIConfig holds construction parameters for OpenAIProvider.
 // All fields are optional — zero values fall back to defaults.
 type OpenAIConfig struct {
@@ -75,6 +80,10 @@ func init() {
 // NewOpenAI creates an OpenAIProvider from the given config, applying
 // defaults for any zero fields.
 func NewOpenAI(cfg OpenAIConfig) *OpenAIProvider {
+	if cfg.BaseURL == "" {
+		// Allow pointing at a proxy/gateway or a mock server in tests.
+		cfg.BaseURL = os.Getenv(OpenAIEnvBaseURL)
+	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = DefaultOpenAIBaseURL
 	}

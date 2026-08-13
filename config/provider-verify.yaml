@@ -1,0 +1,24 @@
+name: verify-agent
+version: "1.0.0"
+
+interface:
+  type: cli
+  cli:
+    banner: "Provider Verify Agent — use /provider and /model to switch"
+    prompt: "> "
+
+components:
+  # native provider：默认全开 openai + deepseek（无 exclude）
+  # （builder 注册为 ProviderManager 组件 "provider-manager"，自动成为默认 provider）
+  - name: "provider-main"
+    type: "provider"
+    driver: "native"
+
+  # react agentcore：ProviderManager dispatch 路由
+  # （注册为 AgentRuntime，自动成为默认 agentcore）
+  - name: "agent-main"
+    type: "agentcore"
+    driver: "native"
+    config:
+      type: "react"
+

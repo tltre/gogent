@@ -17,6 +17,10 @@ const (
 	// DeepSeekEnvModel optionally overrides the default model via environment.
 	DeepSeekEnvModel = "DEEPSEEK_MODEL"
 
+	// DeepSeekEnvBaseURL overrides the API base URL via environment (proxy /
+	// gateway / mock server in tests).
+	DeepSeekEnvBaseURL = "DEEPSEEK_BASE_URL"
+
 	// DefaultDeepSeekModel is used when neither configuration nor the
 	// DEEPSEEK_MODEL environment variable provides a model.
 	DefaultDeepSeekModel = "deepseek-chat"
@@ -58,9 +62,13 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 	if model == "" {
 		model = DefaultDeepSeekModel
 	}
+	baseURL := DeepSeekBaseURL
+	if env := os.Getenv(DeepSeekEnvBaseURL); env != "" {
+		baseURL = env
+	}
 	p := &DeepSeekProvider{
 		OpenAIProvider: NewOpenAI(OpenAIConfig{
-			BaseURL:    DeepSeekBaseURL,
+			BaseURL:    baseURL,
 			APIKey:     cfg.APIKey,
 			APIKeyEnv:  DeepSeekEnvAPIKey,
 			Model:      model,
