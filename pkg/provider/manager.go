@@ -130,6 +130,61 @@ func (m *ProviderManager) List() []ProviderInfo {
 	return infos
 }
 
+// ---------------------------------------------------------------------------
+// Dispatch (v0.14.7)
+//
+// ProviderManager acts as the routing entry point: it reads the provider
+// name from the context (set by the AgentCore from Input.ProviderName) and
+// forwards the call to the matching engine. Both native and (future) process
+// engines share this path as long as they expose ModelInfo and are registered
+// under a non-conflicting name.
+// ---------------------------------------------------------------------------
+
+// Generate routes a non-streaming generation request to the provider selected
+// in the context. An empty provider name selects the first registered engine.
+func (m *ProviderManager) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
+	impl, err := m.selectProvider(ProviderNameFrom(ctx))
+	if err != nil {
+		return Response{}, err
+	}
+	return impl.Generate(ctx, messages)
+}
+
+// Stream routes a streaming generation request to the provider selected in
+// the context. An empty provider name selects the first registered engine.
+func (m *ProviderManager) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
+	impl, err := m.selectProvider(ProviderNameFrom(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return impl.Stream(ctx, messages)
+}
+
+// selectProvider resolves the provider instance to route to.
+func (m *ProviderManager) selectProvider(name string) (IProvider, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if name == "" {
+		if len(m.providers) == 0 {
+			return nil, fmt.Errorf("%w: no providers registered", ErrProviderNotFound)
+		}
+		// First registered engine (deterministic: sorted).
+		names := make([]string, 0, len(m.providers))
+		for n := range m.providers {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		name = names[0]
+	}
+
+	impl, ok := m.providers[name]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrProviderNotFound, name)
+	}
+	return impl, nil
+}
+
 func (m *ProviderManager) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {
 	r := m.Registry()
 	if r == nil {

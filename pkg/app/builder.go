@@ -224,6 +224,19 @@ func (b *Builder) buildChannel(cc ComponentConfig) (component.Component, error) 
 
 func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
+	case string(component.DriverNative):
+		// v0.14.7: native agentcore types registered in the agent type
+		// registry (e.g. "react"). The type is selected via config.type;
+		// defaults to "react".
+		agentType := getString(cc.Config, "type")
+		if agentType == "" {
+			agentType = "react"
+		}
+		core, err := agentcore.CreateAgent(agentType)
+		if err != nil {
+			return nil, fmt.Errorf("create agent type %s: %w", agentType, err)
+		}
+		return agentcore.NewComponent(cc.Name, core), nil
 	case string(component.DriverHTTP), string(component.DriverProcess):
 		core := agentcore.NewProcessAgentCore(&agentcore.ProcessAgentCoreConfig{
 			Name:   cc.Name,

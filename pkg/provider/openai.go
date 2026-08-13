@@ -137,6 +137,16 @@ func (p *OpenAIProvider) resolveAPIKey() (string, error) {
 	return "", fmt.Errorf("%w: no api key for %s", ErrAPIKeyMissing, p.providerName)
 }
 
+// resolveModel returns the model for this request: the context override
+// (v0.14.7, set by the AgentCore from Input.ModelName) if present, otherwise
+// the engine's default model.
+func (p *OpenAIProvider) resolveModel(ctx context.Context) string {
+	if m := ModelFrom(ctx); m != "" {
+		return m
+	}
+	return p.model
+}
+
 // ---------------------------------------------------------------------------
 // IProvider
 // ---------------------------------------------------------------------------
@@ -148,7 +158,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, messages []ProviderMessag
 		return Response{}, err
 	}
 
-	reqBody := buildChatRequest(p.model, messages, false)
+	reqBody := buildChatRequest(p.resolveModel(ctx), messages, false)
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return Response{}, fmt.Errorf("openai: marshal request: %w", err)
@@ -179,7 +189,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage)
 		return nil, err
 	}
 
-	reqBody := buildChatRequest(p.model, messages, true)
+	reqBody := buildChatRequest(p.resolveModel(ctx), messages, true)
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshal request: %w", err)

@@ -588,11 +588,11 @@ builder.Build(
 - 引擎 key 解析优先级：**CredentialStore > 构造时 env**（v0.14.2 行为向后兼容）
 - 注入机制：`CredentialStoreAware` 可选接口，Builder 在 opts 应用后统一注入（无全局状态）
 
-### 问题 C：ProcessProvider 的配置字段去留 — ✅ 部分定稿
+### 问题 C：ProcessProvider 的配置字段去留 — ⏳ 延后（v0.14.7 确认不动）
 
-**决策（v0.14.1）**：`Config` 结构按完整字段定型，但 v0.14.1 阶段 process/http 驱动**保持现状**（`ProcessProviderConfig` 仅取 target），不阻塞 native 路径落地。后续阶段再按完整字段调整 ProcessProvider。
+**决策（v0.14.1）**：`Config` 结构按完整字段定型，但 process/http 驱动保持现状（`ProcessProviderConfig` 仅取 target）。
 
-待后续阶段决策的选项：
+**决策（v0.14.7）**：本阶段**不改造 ProcessProvider**——本地 native 路由与 process gRPC 路由是两条独立路径（远端 agent 有自己的 AgentCore）。C-b/C-c 改动大且无真实 process provider 用户场景，保持 ⏳ 延后。
 
 ```
 C-a：这些字段对 process 驱动仍无意义（ProcessProvider 仅走 gRPC），忽略
@@ -610,16 +610,18 @@ C-c：拆分为两个独立实现：ProcessProvider（gRPC）+ RemoteRESTProvide
 | CLI run | 消息级（D-b） | `run -p "..." --provider <name> --model <name>` 单次指定 |
 | HTTP（未来） | 消息级 | 每条请求 `Input.ProviderName` / `Input.ModelName`（HTTP iface deferred） |
 
-**引擎侧 model 传递决策（v0.14.6）**：Interface 层只**收集**选择（`Input.ProviderName` / `Input.ModelName` 字段），引擎侧 model 覆盖机制与 AgentCore 路由一起在 v0.14.7 定稿（届时在 IProvider 加 opts 与 ctx 携带两案中评审）。
+**引擎侧 model 传递决策（v0.14.7 已定稿）**：采用 **ctx 携带**——`provider.WithProviderName` / `provider.WithModel` 写入 ctx，`ProviderManager.Generate/Stream` 从 ctx 读 provider 名路由到具体引擎，引擎内部读 ctx model 覆盖默认。IProvider 接口保持不变（不加 opts）。
 
-### 问题 E：RouterProvider（聚合/容灾）是否纳入 v0.14.x — ⏳ 待决策
+### 问题 E：RouterProvider（聚合/容灾）是否纳入 v0.14.x — ✅ 已定稿（延后 v0.15.x）
+
+**决策（v0.14.7）**：**不纳入 v0.14.x**。v0.14.7 仅实现单 provider 路由；RouterProvider（failover/负载均衡/按权重）作为独立复杂功能延后到 v0.15.x 单独设计。
 
 ```
 E-a：纳入 —— 提供 failover / 负载均衡 / 按权重路由
 E-b：延后到 v0.15.x —— 先做单实例原生 Provider 的多路注册
 ```
 
-**待决策。**（注意：RouterProvider 是框架内部的透明容灾机制，不是与 OpenRouter SaaS 竞争）
+**✅ 采用 E-b。**（RouterProvider 是框架内部的透明容灾机制，不是与 OpenRouter SaaS 竞争）
 
 ### 问题 F：IProvider 接口是否微调 — ✅ 已定稿（扩展）
 
@@ -689,12 +691,15 @@ v0.14.6 — Interface 层多 Provider 交互 ✅ 已完成
     ├── pkg/iface/cli/cmd_run.go                   --provider + --model flags
     └── 已定稿：问题 D（D-c：会话级 + 消息级）；引擎侧 model 传递 v0.14.7 定
 
-v0.14.7 — AgentCore 路由 + Process 统一改造
-    ├── pkg/agentcore/agent.go                    多 Provider 路由
-    ├── pkg/agentcore/component.go                Dependencies 标记 Multiple=true
-    ├── pkg/provider/process.go                   ProcessProvider 按问题 C 改造（C-b/C-c）
-    ├── tests/provider/                           端到端集成测试
-    └── 解决 问题 E（RouterProvider 去留）
+v0.14.7 — AgentCore 路由 + ReactAgent ✅ 已完成
+    ├── pkg/provider/ctx.go                      WithProviderName/WithModel + From（ctx 携带）
+    ├── pkg/provider/manager.go                  Generate/Stream dispatch（ctx 读 provider 名路由）
+    ├── pkg/provider/openai.go                   引擎读 ctx model 覆盖默认
+    ├── pkg/agentcore/registry.go                类型注册表（RegisterAgentType/CreateAgent）
+    ├── pkg/agentcore/react.go                   ReactAgent（type: "react"，ctx 路由 + 单轮对话）
+    ├── pkg/app/builder.go                       buildAgentCore native → CreateAgent(config.type 默认 react)
+    └── 已定稿：问题 E（E-b 延后 v0.15.x）；问题 C（延后）；model 传递（ctx 方案）
+    └── ⏳ 后续：ReAct 工具循环（tool_calls → 执行 → 迭代）
 
 ⏳ 待补：groq / mistral / ollama / openrouter 等其他 OpenAI 兼容供应商引擎
     （各为薄包装：独立 env key + 内置 baseURL + ModelInfo，模式参考 deepseek.go）

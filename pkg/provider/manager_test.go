@@ -145,3 +145,139 @@ func TestProviderManagerComponentLifecycle(t *testing.T) {
 		t.Fatalf("Dependencies() = %v, want nil", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Dispatch (v0.14.7)
+// ---------------------------------------------------------------------------
+
+// dispatchMock records the ctx it received and the messages.
+type dispatchMock struct {
+	name     string
+	lastCtx  context.Context
+	messages []ProviderMessage
+}
+
+func (d *dispatchMock) Generate(ctx context.Context, msgs []ProviderMessage) (Response, error) {
+	d.lastCtx = ctx
+	d.messages = msgs
+	return Response{Content: "dispatch-" + d.name}, nil
+}
+
+func (d *dispatchMock) Stream(ctx context.Context, msgs []ProviderMessage) (<-chan StreamChunk, error) {
+	d.lastCtx = ctx
+	d.messages = msgs
+	ch := make(chan StreamChunk, 1)
+	ch <- StreamChunk{Delta: "dispatch-" + d.name, Done: true}
+	close(ch)
+	return ch, nil
+}
+
+func (d *dispatchMock) ModelInfo() ModelInfo {
+	return ModelInfo{Name: "m-" + d.name, Provider: d.name, DisplayName: d.name}
+}
+
+func TestProviderManagerDispatchByCtx(t *testing.T) {
+	m := NewManagerComponent("provider-manager")
+	openaiMock := &dispatchMock{name: "openai"}
+	dsMock := &dispatchMock{name: "deepseek"}
+	if err := m.Register("openai", openaiMock); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+	if err := m.Register("deepseek", dsMock); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+
+	ctx := WithProviderName(context.Background(), "deepseek")
+	resp, err := m.Generate(ctx, []ProviderMessage{{Role: "user", Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Generate() = %v", err)
+	}
+	if resp.Content != "dispatch-deepseek" {
+		t.Errorf("Content = %q, want dispatch-deepseek", resp.Content)
+	}
+	if len(openaiMock.messages) != 0 {
+		t.Error("Generate routed to openai, want deepseek")
+	}
+	if got := ProviderNameFrom(dsMock.lastCtx); got != "deepseek" {
+		t.Errorf("provider name passed through ctx = %q, want deepseek", got)
+	}
+}
+
+func TestProviderManagerDispatchDefaultFirst(t *testing.T) {
+	m := NewManagerComponent("provider-manager")
+	dsMock := &dispatchMock{name: "deepseek"} // alphabetical first
+	if err := m.Register("deepseek", dsMock); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+
+	// No provider name in ctx → first registered.
+	resp, err := m.Generate(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Generate() = %v", err)
+	}
+	if resp.Content != "dispatch-deepseek" {
+		t.Errorf("Content = %q, want dispatch-deepseek (default)", resp.Content)
+	}
+}
+
+func TestProviderManagerDispatchUnknown(t *testing.T) {
+	m := NewManagerComponent("provider-manager")
+	if err := m.Register("openai", &dispatchMock{name: "openai"}); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+
+	ctx := WithProviderName(context.Background(), "nope")
+	_, err := m.Generate(ctx, nil)
+	if !errors.Is(err, ErrProviderNotFound) {
+		t.Fatalf("Generate(unknown) err = %v, want ErrProviderNotFound", err)
+	}
+}
+
+func TestProviderManagerDispatchNoProviders(t *testing.T) {
+	m := NewManagerComponent("provider-manager")
+	_, err := m.Generate(context.Background(), nil)
+	if !errors.Is(err, ErrProviderNotFound) {
+		t.Fatalf("Generate(empty) err = %v, want ErrProviderNotFound", err)
+	}
+}
+
+func TestProviderManagerDispatchStream(t *testing.T) {
+	m := NewManagerComponent("provider-manager")
+	openaiMock := &dispatchMock{name: "openai"}
+	if err := m.Register("openai", openaiMock); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+
+	ctx := WithProviderName(context.Background(), "openai")
+	ch, err := m.Stream(ctx, []ProviderMessage{{Role: "user", Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Stream() = %v", err)
+	}
+	chunk := <-ch
+	if chunk.Delta != "dispatch-openai" {
+		t.Errorf("chunk.Delta = %q, want dispatch-openai", chunk.Delta)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Context keys
+// ---------------------------------------------------------------------------
+
+func TestCtxProviderAndModel(t *testing.T) {
+	ctx := context.Background()
+	if got := ProviderNameFrom(ctx); got != "" {
+		t.Errorf("ProviderNameFrom(empty) = %q, want empty", got)
+	}
+	if got := ModelFrom(ctx); got != "" {
+		t.Errorf("ModelFrom(empty) = %q, want empty", got)
+	}
+
+	ctx = WithProviderName(ctx, "openai")
+	ctx = WithModel(ctx, "gpt-4o-mini")
+	if got := ProviderNameFrom(ctx); got != "openai" {
+		t.Errorf("ProviderNameFrom = %q, want openai", got)
+	}
+	if got := ModelFrom(ctx); got != "gpt-4o-mini" {
+		t.Errorf("ModelFrom = %q, want gpt-4o-mini", got)
+	}
+}
