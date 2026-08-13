@@ -388,7 +388,7 @@ ProviderManager
 
 ## 五、Provider 实现策略
 
-### 5.1 代码布局（定稿：v0.14.1 范围）
+### 5.1 代码布局（当前状态）
 
 ```
 pkg/provider/
@@ -398,27 +398,40 @@ pkg/provider/
 ├── default.go               # DefaultProvider — deprecated（保留向后兼容）
 ├── manager.go               # ProviderManager — Component + Register/Get/List ✅ v0.14.1
 ├── config.go                # 引擎注册表 RegisterEngine/CreateEngine ✅ v0.14.1
-├── errors.go                # 哨兵错误（ErrUnknownEngine 等）✅ v0.14.1
+├── errors.go                # 哨兵错误 + ProviderError ✅ v0.14.1/2
 ├── models.go                # ModelInfo 扩展（DisplayName+Models）✅ v0.14.1
-├── openai.go                # OpenAIProvider（v0.14.2）
-├── openai_compat.go         # OpenAICompatibleProvider（v0.14.2）
-├── gemini.go                # GeminiProvider（v0.14.3）
-├── anthropic.go             # AnthropicProvider（v0.14.4）
-├── credentials.go           # CredentialStore 接口 + 默认实现（v0.14.5）
+├── openai.go                # OpenAIProvider ✅ v0.14.2（Generate/Stream/SSE/ToolCall）
+├── openai_compat.go         # NewOpenAICompat 内部基类 ✅ v0.14.2（不注册为独立引擎）
+├── deepseek.go              # DeepSeekProvider ✅ v0.14.2（OpenAI 兼容薄包装）
+├── gemini.go                # GeminiProvider ⏳ TODO（v0.14.3 规划）
+├── anthropic.go             # AnthropicProvider ⏳ TODO（v0.14.4 规划）
+├── credentials.go           # CredentialStore 接口 + 默认实现 ⏳ TODO（v0.14.5）
 └── *_test.go                # 各 Provider 单元测试
 ```
 
+**OpenAI 兼容供应商引擎清单**（复用 `NewOpenAICompat` 基类 + 独立 env key/baseURL 注册）：
+
+| 引擎 | baseURL | API key env | 状态 |
+|------|---------|-------------|------|
+| deepseek | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` | ✅ v0.14.2 |
+| groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | ⏳ TODO |
+| mistral | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` | ⏳ TODO |
+| ollama（本地） | `http://localhost:11434/v1` | 无 | ⏳ TODO |
+| openrouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | ⏳ TODO |
+| 其他（together/vllm/...） | 各自 | 各自 | ⏳ TODO |
+
 ### 5.2 引擎与依赖
 
-
-| 引擎            | 依赖                   | 说明                                                         |
-| ------------- | -------------------- | ---------------------------------------------------------- |
-| openai        | 无（标准 net/http）       | 市场覆盖率最高                                                    |
-| openai-compat | 无                    | 复用 OpenAI 逻辑，仅替换 baseURL，覆盖 DeepSeek/Groq/Mistral/Ollama 等 |
-| gemini        | 无（REST API，不走官方 SDK） | 减少依赖树，统一错误处理                                               |
-| anthropic     | 无                    | 标准 net/http                                                |
-| openrouter    | 无                    | 本质是 openai-compat，自定义 endpoint                             |
-| process       | 现有 gRPC 依赖           | 保持现状                                                       |
+| 引擎            | 依赖                   | 说明                                                         | 状态   |
+| ------------- | -------------------- | ---------------------------------------------------------- | ---- |
+| openai        | 无（标准 net/http）       | 市场覆盖率最高                                                    | ✅ v0.14.2 |
+| openai-compat | 无                    | 内部基类，仅替换 baseURL（不注册为独立引擎）                                 | ✅ v0.14.2 |
+| deepseek      | 无                    | OpenAI 兼容薄包装，`DEEPSEEK_API_KEY` + 内置 baseURL                 | ✅ v0.14.2 |
+| gemini        | 无（REST API，不走官方 SDK） | 减少依赖树，统一错误处理                                               | ⏳ TODO v0.14.3 |
+| anthropic     | 无                    | 标准 net/http                                                | ⏳ TODO v0.14.4 |
+| openrouter    | 无                    | 本质是 openai-compat，自定义 endpoint                             | ⏳ TODO |
+| groq/mistral/ollama 等 | 无                    | 各为独立引擎（薄包装 + 独立 env key + 内置 baseURL）                   | ⏳ TODO |
+| process       | 现有 gRPC 依赖           | 保持现状                                                       | 现状    |
 
 
 **推荐策略**：全部使用标准库 `net/http`，不引入各供应商官方 SDK。理由：减少依赖树、统一错误处理和重试策略、避免 SDK 版本破坏兼容性。
@@ -622,7 +635,7 @@ type ModelInfo struct {
 ## 八、实施路线图
 
 ```
-v0.14.1 — Provider 基础设施 ✅ 当前阶段
+v0.14.1 — Provider 基础设施 ✅ 已完成
     ├── pkg/provider/errors.go                     哨兵错误（ErrUnknownEngine 等）
     ├── pkg/provider/models.go                     ModelInfo 扩展（DisplayName+Models）
     ├── pkg/provider/config.go                     引擎注册表（RegisterEngine/CreateEngine/RegisteredEngines）
@@ -633,15 +646,18 @@ v0.14.1 — Provider 基础设施 ✅ 当前阶段
     ├── pkg/provider/config_test.go                引擎注册表 + exclude 过滤 + 未知引擎报错测试
     └── 已定稿：问题 A / F / G / H；问题 C 部分（process 保持现状）
 
-v0.14.2 — OpenAI + OpenAI 兼容
-    ├── pkg/provider/openai.go                    OpenAI + OpenAICompatible（注册进引擎注册表）
-    └── pkg/provider/openai_test.go
+v0.14.2 — OpenAI + OpenAI 兼容 ✅ 已完成
+    ├── pkg/provider/openai.go                    OpenAIProvider（Generate/Stream/SSE/ToolCall）
+    ├── pkg/provider/openai_compat.go             NewOpenAICompat 内部基类（不注册为独立引擎）
+    ├── pkg/provider/deepseek.go                  DeepSeekProvider（OpenAI 兼容薄包装，注册进引擎表）
+    ├── pkg/provider/errors.go                    ProviderError + ErrAPIKeyMissing
+    └── pkg/provider/openai_test.go + deepseek_test.go
 
-v0.14.3 — Gemini
+v0.14.3 — Gemini ⏳ 待实现
     ├── pkg/provider/gemini.go                    Gemini REST API（注册进引擎注册表）
     └── pkg/provider/gemini_test.go
 
-v0.14.4 — Anthropic
+v0.14.4 — Anthropic ⏳ 待实现
     ├── pkg/provider/anthropic.go                 Claude API（注册进引擎注册表）
     └── pkg/provider/anthropic_test.go
 
@@ -661,6 +677,9 @@ v0.14.7 — AgentCore 路由 + Process 统一改造
     ├── pkg/provider/process.go                   ProcessProvider 按问题 C 改造（C-b/C-c）
     ├── tests/provider/                           端到端集成测试
     └── 解决 问题 E（RouterProvider 去留）
+
+⏳ 待补：groq / mistral / ollama / openrouter 等其他 OpenAI 兼容供应商引擎
+    （各为薄包装：独立 env key + 内置 baseURL + ModelInfo，模式参考 deepseek.go）
 ```
 
 ---
