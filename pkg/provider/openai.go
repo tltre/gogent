@@ -32,8 +32,10 @@ const OpenAIEnvModel = "OPENAI_MODEL"
 // All fields are optional — zero values fall back to defaults.
 type OpenAIConfig struct {
 	BaseURL    string        // default DefaultOpenAIBaseURL
-	APIKey     string        // default: OPENAI_API_KEY env
-	Model      string        // default: OPENAI_MODEL env, then DefaultOpenAIModel
+	APIKey     string        // default: APIKeyEnv environment variable
+	APIKeyEnv  string        // env var name for the key (default OPENAI_API_KEY); lets OpenAI-compatible vendors read their own env (DEEPSEEK_API_KEY, ...)
+	Model      string        // default: ModelEnv environment variable, then vendor default
+	ModelEnv   string        // env var name for the model override (default OPENAI_MODEL)
 	Timeout    time.Duration // default 60s
 	MaxRetries int           // reserved for shared retry layer (future)
 	HTTPClient *http.Client  // override transport (tests, proxy, etc.)
@@ -67,13 +69,21 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIProvider {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = DefaultOpenAIBaseURL
 	}
+	apiKeyEnv := cfg.APIKeyEnv
+	if apiKeyEnv == "" {
+		apiKeyEnv = OpenAIEnvAPIKey
+	}
 	apiKey := cfg.APIKey
 	if apiKey == "" {
-		apiKey = os.ExpandEnv(os.Getenv(OpenAIEnvAPIKey))
+		apiKey = os.ExpandEnv(os.Getenv(apiKeyEnv))
+	}
+	modelEnv := cfg.ModelEnv
+	if modelEnv == "" {
+		modelEnv = OpenAIEnvModel
 	}
 	model := cfg.Model
 	if model == "" {
-		model = os.Getenv(OpenAIEnvModel)
+		model = os.Getenv(modelEnv)
 	}
 	if model == "" {
 		model = DefaultOpenAIModel
