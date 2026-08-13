@@ -295,7 +295,9 @@ func (d *Daemon) handleCompFailure(comp api.ComponentInfo, now time.Time) {
 			return
 		}
 		portStr := strconv.Itoa(port)
-		target := "localhost:" + portStr
+		// 127.0.0.1 (not localhost): gRPC DNS resolution of "localhost" can
+		// hang on Windows, stalling the health check and auto-restart.
+		target := "127.0.0.1:" + portStr
 
 		exePath, err := os.Executable()
 		if err != nil {
@@ -320,13 +322,22 @@ func (d *Daemon) handleCompFailure(comp api.ComponentInfo, now time.Time) {
 		comp.PID = proc.Pid
 		comp.Target = target
 		comp.Status = "running"
-		// Write back to the store's internal map.
-		if existing, ok := d.compStore.Get(comp.Name); ok {
+		// Write back to the store's internal map (direct access — calling
+		// Get() while holding the write lock would deadlock on RLock).
+		if existing, ok := d.compStore.comps[comp.Name]; ok {
 			existing.PID = proc.Pid
 			existing.Target = target
 			existing.Status = "running"
 		}
 		d.compStore.mu.Unlock()
+
+		// Update the component port file so external observers (CLI, tests)
+		// see the new PID, mirroring LoadApp's fork path.
+		if appName := comp.AppName; appName != "" {
+			if err := WriteComponentPortFile(appName, comp.Name, ":"+portStr, proc.Pid); err != nil {
+				fmt.Fprintf(os.Stderr, "[daemon] warn: write port file for %s: %v\n", comp.Name, err)
+			}
+		}
 
 		// Wait for gRPC health.
 		if err := d.waitForComponentHealth(target, 10*time.Second); err != nil {

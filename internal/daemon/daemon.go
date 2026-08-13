@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,6 +18,12 @@ import (
 	"github.com/tltre/gogent/internal/daemon/tool"
 	"github.com/tltre/gogent/pkg/component"
 	"gopkg.in/yaml.v3"
+)
+
+// Sentinel errors for daemon operations.
+var (
+	// ErrAppNotFound is returned when an app is not registered in the store.
+	ErrAppNotFound = errors.New("app not found")
 )
 
 // Daemon manages the lifecycle of App instances. It holds an AppStore,
@@ -271,11 +278,16 @@ func (d *Daemon) GetApp(name string) (*api.AppInfo, bool) {
 // allocatePort reserves and returns an available port. It checks both OS-level
 // availability and the daemon's internal reserved-port set to prevent races
 // between allocation and the agent process binding.
+//
+// basePort+1 is the daemon gRPC ToolService port (bound on 127.0.0.1). It is
+// explicitly skipped: on Windows, a wildcard (":port") probe can report the
+// loopback-bound gRPC port as available, which would hand it to a child
+// process and cause a bind conflict.
 func (d *Daemon) allocatePort() (int, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	for i := 1; i <= 100; i++ {
+	for i := 2; i <= 100; i++ {
 		port := d.basePort + i
 		if d.reservedPorts[port] {
 			continue
@@ -481,7 +493,10 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*api.AppI
 			return "", fmt.Errorf("allocate port for %s: %w", compName, err)
 		}
 		portStr := strconv.Itoa(port)
-		target := "localhost:" + portStr
+		// Use 127.0.0.1 instead of localhost: gRPC's DNS resolution of
+		// "localhost" can hang on Windows (happy-eyeballs dual-stack probing)
+		// which stalls waitForComponentHealth and LoadApp.
+		target := "127.0.0.1:" + portStr
 
 		// Determine what executable to fork:
 		//   config.command set → fork that binary (for e2e stubcomponents)
@@ -670,7 +685,7 @@ func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*api.AppI
 func (d *Daemon) StopApp(name string) error {
 	info, exists := d.store.Get(name)
 	if !exists {
-		return fmt.Errorf("app %s not found", name)
+		return fmt.Errorf("%w: %s", ErrAppNotFound, name)
 	}
 
 	// Read the real PID from the agent's port file.

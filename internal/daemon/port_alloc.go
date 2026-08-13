@@ -19,10 +19,12 @@ func IsPortAvailable(port int) bool {
 	return true
 }
 
-// AllocatePort finds an available TCP port starting from basePort+1.
+// AllocatePort finds an available TCP port starting from basePort+2.
 // It probes up to 100 consecutive ports and returns the first available one.
+// basePort+1 is skipped — it is conventionally the daemon gRPC port, and a
+// wildcard probe can falsely report the loopback-bound gRPC port as free.
 func AllocatePort(basePort int) (int, error) {
-	for i := 1; i <= 100; i++ {
+	for i := 2; i <= 100; i++ {
 		port := basePort + i
 		if IsPortAvailable(port) {
 			return port, nil

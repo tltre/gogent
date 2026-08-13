@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,8 +42,11 @@ func NewDaemonServer(addr string, d *Daemon) *Server {
 	mux.HandleFunc(api.PathDaemonComponentsHealth, s.handleComponentsHealth)
 	mux.HandleFunc(api.PathDaemonInfo, s.handleInfo)
 	mux.HandleFunc(api.PathDaemonTools, s.handleTools)
-	mux.HandleFunc(api.PathDaemonToolsPath, s.handleToolsPath)
-	mux.HandleFunc(api.PathDaemonToolsRestart, s.handleToolsRestart)
+	mux.HandleFunc(api.PathDaemonToolsPath, s.handleToolsPath) // handles /{name} and /{name}/restart
+	// NOTE: PathDaemonToolsRestart is intentionally NOT registered as its own
+	// pattern — it equals PathDaemonToolsPath ("/api/v1/daemon/tools/"), so
+	// registering both would panic with a pattern conflict. The restart action
+	// is dispatched inside handleToolsPath based on the "/restart" suffix.
 
 	// v0.13.x: Sandbox management endpoints
 	mux.HandleFunc(api.PathDaemonSandboxProviders, s.handleSandboxProviders)
@@ -153,11 +157,18 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleToolsPath returns status for a single tool (GET) or deletes it (DELETE).
+// handleToolsPath returns status for a single tool (GET), deletes it (DELETE),
+// or restarts its MCP server (POST /{name}/restart).
 func (s *Server) handleToolsPath(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, api.PathDaemonToolsPath)
 	if name == "" || strings.Contains(name, "/") {
 		http.Error(w, "tool name required", http.StatusBadRequest)
+		return
+	}
+
+	// Dispatch restart: POST /{name}/restart
+	if strings.HasSuffix(r.URL.Path, "/restart") {
+		s.handleToolsRestart(w, r)
 		return
 	}
 
@@ -313,6 +324,10 @@ func (s *Server) handleAppsPath(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodDelete:
 		if err := s.daemon.StopApp(name); err != nil {
+			if errors.Is(err, ErrAppNotFound) {
+				http.Error(w, fmt.Sprintf("app %s not found", name), http.StatusNotFound)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
