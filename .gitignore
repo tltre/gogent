@@ -16,6 +16,9 @@ opencode.json
 # Sisyphus plans and state
 .sisyphus/
 
+# OMO plans and state
+.omo/
+
 # OS
 .DS_Store
 Thumbs.db
