@@ -8,11 +8,17 @@ import (
 	"github.com/tltre/gogent/pkg/logger"
 )
 
+// Deprecated: ProviderComponent is superseded by ProviderManager (v0.14.1).
+// The manager itself is a Component of type ComponentProvider; individual
+// provider instances are registered into it via Register and never enter the
+// Registry. This file is retained for transitional compatibility and will be
+// removed once no caller depends on it.
 type ProviderComponent struct {
 	component.BasicComponent
 	provider IProvider
 }
 
+// Deprecated: use provider.NewManagerComponent instead (v0.14.1).
 func NewComponent(name string, provider IProvider) *ProviderComponent {
 	return &ProviderComponent{
 		BasicComponent: component.NewBasicComponent(name),

@@ -31,6 +31,11 @@ type Builder struct {
 	cliEntries []cli.CommandEntry
 	pool       *grpctransport.Pool
 	mgmtPort   string
+
+	// v0.14.1: unified provider manager (HookManager pattern).
+	// Created lazily on first provider component; registered into the
+	// Registry once at the end of Build().
+	providerManager *provider.ProviderManager
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -77,6 +82,10 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		}
 	}
 
+	// v0.14.1: register the unified ProviderManager created by native provider
+	// components (idempotent — WithProvider options may create it later too).
+	b.registerProviderManager()
+
 	for typ, name := range b.config.Defaults {
 		compType := component.ComponentType(typ)
 		if err := b.registry.SetDefault(compType, name); err != nil {
@@ -89,6 +98,10 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 			return nil, fmt.Errorf("apply build option: %w", err)
 		}
 	}
+
+	// v0.14.1: WithProvider options may have created the manager — ensure it
+	// is registered before registerDefaults.
+	b.registerProviderManager()
 
 	b.registerDefaults()
 
@@ -209,7 +222,17 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
 	switch cc.Driver {
+	case string(component.DriverNative):
+		// v0.14.1: native providers are registered into the unified
+		// ProviderManager (blacklist mechanism). All registered engines are
+		// enabled by default; the optional "exclude" config filters them out.
+		if err := b.buildNativeProviders(cc); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	case string(component.DriverHTTP), string(component.DriverProcess):
+		// TODO(problem C): unify process/http providers under ProviderManager.
+		// v0.14.1 keeps the existing standalone behavior.
 		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
 			Name:   cc.Name,
 			Pool:   b.pool,
@@ -219,6 +242,38 @@ func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error)
 	default:
 		return nil, nil
 	}
+}
+
+// ensureProviderManager lazily creates the unified ProviderManager component.
+func (b *Builder) ensureProviderManager() *provider.ProviderManager {
+	if b.providerManager == nil {
+		b.providerManager = provider.NewManagerComponent("provider-manager")
+	}
+	return b.providerManager
+}
+
+// buildNativeProviders instantiates every registered engine (minus the ones
+// listed in the "exclude" config) and registers it into the ProviderManager.
+func (b *Builder) buildNativeProviders(cc ComponentConfig) error {
+	excluded := make(map[string]bool)
+	for _, e := range getStringSlice(cc.Config, "exclude") {
+		excluded[e] = true
+	}
+
+	mgr := b.ensureProviderManager()
+	for _, engine := range provider.RegisteredEngines() {
+		if excluded[engine] {
+			continue
+		}
+		impl, err := provider.CreateEngine(engine)
+		if err != nil {
+			return fmt.Errorf("create engine %s: %w", engine, err)
+		}
+		if err := mgr.Register(engine, impl); err != nil {
+			return fmt.Errorf("register engine %s: %w", engine, err)
+		}
+	}
+	return nil
 }
 
 // buildTool removed in v0.12.2 — tools managed by daemon ToolRegistry.
@@ -388,6 +443,19 @@ func (b *Builder) registerDefaults() {
 	}
 }
 
+// registerProviderManager registers the unified ProviderManager into the
+// Registry if it exists and is not yet registered. Idempotent — safe to call
+// multiple times across Build() (e.g. after WithProvider options).
+func (b *Builder) registerProviderManager() {
+	if b.providerManager == nil {
+		return
+	}
+	if b.registry.Get(b.providerManager.GetName()) != nil {
+		return
+	}
+	b.registry.Register(b.providerManager)
+}
+
 func (b *Builder) buildInterface() iface.Interface {
 	switch b.config.Interface.Type {
 	case "cli":
@@ -425,9 +493,17 @@ func WithAgentCore(name string, core agentcore.IAgentCore) BuildOption {
 	return WithComponent(comp)
 }
 
+// WithProvider registers an IProvider instance into the unified
+// ProviderManager (v0.14.1). The manager is created on demand and registered
+// into the Registry at the end of Build().
 func WithProvider(name string, p provider.IProvider) BuildOption {
-	comp := provider.NewComponent(name, p)
-	return WithComponent(comp)
+	return func(b *Builder) error {
+		mgr := b.ensureProviderManager()
+		if err := mgr.Register(name, p); err != nil {
+			return err
+		}
+		return nil
+	}
 }
 
 func WithEventBus(name string, eb eventbus.IEventBus) BuildOption {

@@ -39,14 +39,6 @@ type StreamChunk struct {
 	Done     bool
 }
 
-type ModelInfo struct {
-	Name           string
-	Provider       string
-	ContextSize    int
-	SupportsTool   bool
-	SupportsVision bool
-}
-
 type IProvider interface {
 	Generate(ctx context.Context, messages []ProviderMessage) (Response, error)
 	Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error)
