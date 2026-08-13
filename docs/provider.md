@@ -600,15 +600,17 @@ C-b：ProcessProvider 同时支持 REST API 直连（成为"远程 REST Provider
 C-c：拆分为两个独立实现：ProcessProvider（gRPC）+ RemoteRESTProvider
 ```
 
-### 问题 D：Provider 切换粒度 — ⏳ 待决策（v0.14.6 前定）
+### 问题 D：Provider 切换粒度 — ✅ 已定稿（D-c：会话级 + 消息级）
 
-```
-D-a：会话级切换（CLI 会话状态，简单）
-D-b：逐条消息切换（HTTP API 每条请求带 provider 字段，灵活）
-D-c：两者都支持（会话级默认 + 消息级覆盖）
-```
+**决策**：
 
-**待决策。**
+| 层 | 粒度 | 实现 |
+|----|------|------|
+| CLI chat | 会话级（D-a） | REPL 内 `currentProvider` + `currentModel` 状态，`/provider` `/model` 命令切换 |
+| CLI run | 消息级（D-b） | `run -p "..." --provider <name> --model <name>` 单次指定 |
+| HTTP（未来） | 消息级 | 每条请求 `Input.ProviderName` / `Input.ModelName`（HTTP iface deferred） |
+
+**引擎侧 model 传递决策（v0.14.6）**：Interface 层只**收集**选择（`Input.ProviderName` / `Input.ModelName` 字段），引擎侧 model 覆盖机制与 AgentCore 路由一起在 v0.14.7 定稿（届时在 IProvider 加 opts 与 ctx 携带两案中评审）。
 
 ### 问题 E：RouterProvider（聚合/容灾）是否纳入 v0.14.x — ⏳ 待决策
 
@@ -680,11 +682,12 @@ v0.14.5 — 凭证管理 ✅ 已完成
     ├── pkg/app/builder.go                        WithCredentialStore + 默认 store + injectCredentialStore
     └── 已定稿：问题 B（B-2 变体：app 作用域文件，精确键）
 
-v0.14.6 — Interface 层多 Provider 交互
-    ├── pkg/iface/cli/cmd_chat.go                 /provider 命令
-    ├── pkg/iface/cli/cmd_run.go                  --provider flag
-    ├── pkg/iface/cli/cmd_provider.go             新命令实现
-    └── 解决 问题 D（切换粒度）
+v0.14.6 — Interface 层多 Provider 交互 ✅ 已完成
+    ├── pkg/agentcore/agent.go                     Input 增加 ProviderName + ModelName
+    ├── pkg/iface/cli/cmd_provider.go              /provider + /model 命令（纯函数解析/校验/渲染）
+    ├── pkg/iface/cli/cmd_chat.go                  REPL 集成，会话级 currentProvider + currentModel
+    ├── pkg/iface/cli/cmd_run.go                   --provider + --model flags
+    └── 已定稿：问题 D（D-c：会话级 + 消息级）；引擎侧 model 传递 v0.14.7 定
 
 v0.14.7 — AgentCore 路由 + Process 统一改造
     ├── pkg/agentcore/agent.go                    多 Provider 路由

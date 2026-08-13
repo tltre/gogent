@@ -14,9 +14,10 @@ import (
 // ProviderInfo is the capability declaration of a registered provider,
 // presented to end users by the Interface layer.
 type ProviderInfo struct {
-	Name        string   // engine identifier (registration name), e.g. "openai"
-	DisplayName string   // brand name visible to end users, e.g. "OpenAI"
-	Models      []string // models this engine supports (user picks at runtime)
+	Name         string   // engine identifier (registration name), e.g. "openai"
+	DisplayName  string   // brand name visible to end users, e.g. "OpenAI"
+	DefaultModel string   // engine's default model (ModelInfo.Name); used when switching providers
+	Models       []string // models this engine supports (user picks at runtime)
 }
 
 // ProviderManager is the unified registry of all provider instances.
@@ -118,6 +119,7 @@ func (m *ProviderManager) List() []ProviderInfo {
 		}
 		if mi := m.providers[name].ModelInfo(); mi.Provider != "" {
 			info.DisplayName = mi.DisplayName
+			info.DefaultModel = mi.Name
 			info.Models = mi.Models
 			if info.DisplayName == "" {
 				info.DisplayName = mi.Provider

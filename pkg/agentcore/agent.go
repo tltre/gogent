@@ -7,6 +7,15 @@ import (
 type Input struct {
 	Messages []Message
 	Context  map[string]any
+
+	// ProviderName selects the provider engine to use for this run
+	// (engine name, e.g. "openai", "deepseek"). Empty means the
+	// AgentCore's default routing (v0.14.7).
+	ProviderName string
+
+	// ModelName selects the model within the chosen provider.
+	// Empty means the provider's default model (v0.14.7).
+	ModelName string
 }
 
 type Output struct {

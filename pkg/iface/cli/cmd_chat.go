@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/provider"
 )
 
 func buildChat(cli *DefaultCLI) *cobra.Command {
@@ -33,6 +34,10 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 		return fmt.Errorf("default component is not an AgentRuntime")
 	}
 
+	// v0.14.6: session-level provider/model selection.
+	mgr := providerManagerFrom(cli)
+	currentProvider, currentModel := initialSelection(mgr)
+
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Fprint(os.Stdout, cli.Prompt)
 
@@ -52,10 +57,21 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 			return nil
 		}
 
+		// Handle /provider and /model REPL commands (v0.14.6).
+		if handled, cont := handleProviderCommand(mgr, input, &currentProvider, &currentModel); handled {
+			if !cont {
+				return nil
+			}
+			fmt.Fprint(os.Stdout, cli.Prompt)
+			continue
+		}
+
 		output, err := agent.Run(ctx, agentcore.Input{
 			Messages: []agentcore.Message{
 				{Role: "user", Content: input},
 			},
+			ProviderName: currentProvider,
+			ModelName:    currentModel,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stdout, "Error: %v\n%s", err, cli.Prompt)
@@ -66,4 +82,98 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 	}
 
 	return scanner.Err()
+}
+
+// providerManagerFrom returns the ProviderManager from the registry, or nil
+// when no provider component is registered.
+func providerManagerFrom(cli *DefaultCLI) *provider.ProviderManager {
+	reg := cli.Registry()
+	if reg == nil {
+		return nil
+	}
+	comp := reg.GetDefault(component.ComponentProvider)
+	if comp == nil {
+		return nil
+	}
+	mgr, ok := comp.(*provider.ProviderManager)
+	if !ok {
+		return nil
+	}
+	return mgr
+}
+
+// initialSelection picks the session's starting provider/model: the first
+// registered provider with its default model.
+func initialSelection(mgr *provider.ProviderManager) (providerName, modelName string) {
+	if mgr == nil {
+		return "", ""
+	}
+	infos := mgr.List()
+	if len(infos) == 0 {
+		return "", ""
+	}
+	first := infos[0]
+	return first.Name, first.DefaultModel
+}
+
+// handleProviderCommand executes a /provider or /model command against the
+// session state. Returns (handled, continueChat): handled reports whether
+// the line was a provider command; continueChat is false when the chat
+// session should exit.
+func handleProviderCommand(mgr *provider.ProviderManager, line string, currentProvider, currentModel *string) (bool, bool) {
+	pc, ok := parseProviderCommand(line)
+	if !ok {
+		return false, true
+	}
+
+	switch pc.kind {
+	case "list":
+		var infos []provider.ProviderInfo
+		if mgr != nil {
+			infos = mgr.List()
+		}
+		fmt.Println(renderProviderList(infos, *currentProvider, *currentModel))
+
+	case "switch-provider":
+		if mgr == nil {
+			fmt.Println("no providers configured")
+			break
+		}
+		info, err := resolveProvider(mgr, pc.name)
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		model, err := resolveModel(info, "")
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		*currentProvider = info.Name
+		*currentModel = model
+		fmt.Printf("Switched to %s (model: %s)\n", info.Name, model)
+
+	case "show-model":
+		fmt.Printf("Current model: %s\n", *currentModel)
+
+	case "switch-model":
+		if mgr == nil {
+			fmt.Println("no providers configured")
+			break
+		}
+		info, err := resolveProvider(mgr, *currentProvider)
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		model, err := resolveModel(info, pc.name)
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		*currentModel = model
+		fmt.Printf("Switched model to %s\n", model)
+	}
+
+	return true, true
 }
