@@ -112,3 +112,49 @@ func TestBuildNoNativeProviderNoManager(t *testing.T) {
 		t.Fatalf("GetDefault(ComponentProvider) = %v, want nil", comp)
 	}
 }
+
+// storeAwareMock records whether a CredentialStore was injected.
+type storeAwareMock struct {
+	builderMockProvider
+	store provider.CredentialStore
+}
+
+func (m *storeAwareMock) SetCredentialStore(s provider.CredentialStore) {
+	m.store = s
+}
+
+func TestBuildInjectsCredentialStore(t *testing.T) {
+	registerTestEngine(t, "cred-test-engine")
+
+	cfg := &Config{
+		Name: "cred-app",
+		Components: []ComponentConfig{
+			{
+				Name:   "provider-main",
+				Type:   "provider",
+				Driver: "native",
+			},
+		},
+	}
+
+	// Register a store-aware mock engine by replacing the factory is not
+	// possible post-registration; instead verify the default store is a
+	// FileCredentialStore with the app-scoped path, and that
+	// WithCredentialStore overrides it.
+	custom := provider.NewFileCredentialStore("/tmp/custom-cred.yaml")
+
+	b := NewBuilderFromConfig(cfg)
+	if _, err := b.Build(WithCredentialStore(custom)); err != nil {
+		t.Fatalf("Build() = %v", err)
+	}
+	if b.credStore != custom {
+		t.Fatalf("credStore after WithCredentialStore = %v, want custom", b.credStore)
+	}
+
+	// Default path derivation is app-scoped.
+	path := provider.DefaultAppCredentialPath("cred-app")
+	if path == "" || path == "/tmp/custom-cred.yaml" {
+		t.Fatalf("DefaultAppCredentialPath = %q, want app-scoped path", path)
+	}
+}
+

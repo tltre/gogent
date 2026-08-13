@@ -58,7 +58,7 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 	if model == "" {
 		model = DefaultDeepSeekModel
 	}
-	return &DeepSeekProvider{
+	p := &DeepSeekProvider{
 		OpenAIProvider: NewOpenAI(OpenAIConfig{
 			BaseURL:    DeepSeekBaseURL,
 			APIKey:     cfg.APIKey,
@@ -69,6 +69,8 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 		}),
 		model: model,
 	}
+	p.providerName = "deepseek"
+	return p
 }
 
 // ModelInfo returns the static capability declaration of this provider.

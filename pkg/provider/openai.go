@@ -48,11 +48,20 @@ type OpenAIConfig struct {
 type OpenAIProvider struct {
 	client  *http.Client
 	baseURL string
-	apiKey  string
+	apiKey  string // env fallback resolved at construction (v0.14.2)
 	model   string
+
+	// providerName is the engine identifier used as the credential key in a
+	// CredentialStore ("openai", "deepseek", ...). Set by the engine
+	// constructor; defaults to "openai".
+	providerName string
+	// credStore, when injected (CredentialStoreAware), takes priority over
+	// apiKey when resolving the key at Generate/Stream time (v0.14.5).
+	credStore CredentialStore
 }
 
 var _ IProvider = (*OpenAIProvider)(nil)
+var _ CredentialStoreAware = (*OpenAIProvider)(nil)
 
 // init registers the "openai" engine into the engine registry. The factory is
 // parameterless by design: the provider self-bootstraps from configuration
@@ -97,11 +106,35 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIProvider {
 		client = &http.Client{Timeout: timeout}
 	}
 	return &OpenAIProvider{
-		client:  client,
-		baseURL: strings.TrimSuffix(cfg.BaseURL, "/"),
-		apiKey:  apiKey,
-		model:   model,
+		client:       client,
+		baseURL:      strings.TrimSuffix(cfg.BaseURL, "/"),
+		apiKey:       apiKey,
+		model:        model,
+		providerName: "openai",
 	}
+}
+
+// SetCredentialStore injects a CredentialStore for runtime key resolution
+// (v0.14.5). When set, Generate/Stream prefer the store's key over the
+// construction-time environment value.
+func (p *OpenAIProvider) SetCredentialStore(s CredentialStore) {
+	p.credStore = s
+}
+
+// resolveAPIKey returns the API key to use for a request. Resolution order:
+//  1. injected CredentialStore (if it has a key for the provider)
+//  2. construction-time env value (backward compatible with v0.14.2)
+//  3. error ErrAPIKeyMissing
+func (p *OpenAIProvider) resolveAPIKey() (string, error) {
+	if p.credStore != nil {
+		if k, err := p.credStore.Get(p.providerName); err == nil && k != "" {
+			return k, nil
+		}
+	}
+	if p.apiKey != "" {
+		return p.apiKey, nil
+	}
+	return "", fmt.Errorf("%w: no api key for %s", ErrAPIKeyMissing, p.providerName)
 }
 
 // ---------------------------------------------------------------------------
@@ -110,8 +143,9 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIProvider {
 
 // Generate performs a non-streaming chat completion and returns the response.
 func (p *OpenAIProvider) Generate(ctx context.Context, messages []ProviderMessage) (Response, error) {
-	if p.apiKey == "" {
-		return Response{}, fmt.Errorf("%w: %s not set", ErrAPIKeyMissing, OpenAIEnvAPIKey)
+	apiKey, err := p.resolveAPIKey()
+	if err != nil {
+		return Response{}, err
 	}
 
 	reqBody := buildChatRequest(p.model, messages, false)
@@ -120,7 +154,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, messages []ProviderMessag
 		return Response{}, fmt.Errorf("openai: marshal request: %w", err)
 	}
 
-	resp, err := p.doRequest(ctx, body)
+	resp, err := p.doRequest(ctx, body, apiKey)
 	if err != nil {
 		return Response{}, err
 	}
@@ -140,8 +174,9 @@ func (p *OpenAIProvider) Generate(ctx context.Context, messages []ProviderMessag
 // Stream performs a streaming chat completion and returns a channel of
 // chunks. The channel is closed when the stream completes or errors.
 func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage) (<-chan StreamChunk, error) {
-	if p.apiKey == "" {
-		return nil, fmt.Errorf("%w: %s not set", ErrAPIKeyMissing, OpenAIEnvAPIKey)
+	apiKey, err := p.resolveAPIKey()
+	if err != nil {
+		return nil, err
 	}
 
 	reqBody := buildChatRequest(p.model, messages, true)
@@ -150,7 +185,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage)
 		return nil, fmt.Errorf("openai: marshal request: %w", err)
 	}
 
-	resp, err := p.doRequest(ctx, body)
+	resp, err := p.doRequest(ctx, body, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -186,14 +221,14 @@ func (p *OpenAIProvider) ModelInfo() ModelInfo {
 
 // doRequest sends the JSON body to /chat/completions and returns the raw
 // response (caller must close Body).
-func (p *OpenAIProvider) doRequest(ctx context.Context, body []byte) (*http.Response, error) {
+func (p *OpenAIProvider) doRequest(ctx context.Context, body []byte, apiKey string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		p.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("openai: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := p.client.Do(req)
 	if err != nil {

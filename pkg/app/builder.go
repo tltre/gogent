@@ -36,6 +36,11 @@ type Builder struct {
 	// Created lazily on first provider component; registered into the
 	// Registry once at the end of Build().
 	providerManager *provider.ProviderManager
+
+	// v0.14.5: app-scoped credential store for provider API keys.
+	// Defaults to a FileCredentialStore at ~/.gogent/apps/<name>/credentials.yaml;
+	// overridable via WithCredentialStore.
+	credStore provider.CredentialStore
 }
 
 func NewBuilder(configPath string) (*Builder, error) {
@@ -53,6 +58,9 @@ func NewBuilder(configPath string) (*Builder, error) {
 		config:   cfg,
 		registry: component.NewRegistry(),
 		pool:     grpctransport.NewPool(),
+		credStore: provider.NewFileCredentialStore(
+			provider.DefaultAppCredentialPath(cfg.Name),
+		),
 	}, nil
 }
 
@@ -61,6 +69,9 @@ func NewBuilderFromConfig(cfg *Config) *Builder {
 		config:   cfg,
 		registry: component.NewRegistry(),
 		pool:     grpctransport.NewPool(),
+		credStore: provider.NewFileCredentialStore(
+			provider.DefaultAppCredentialPath(cfg.Name),
+		),
 	}
 }
 
@@ -98,6 +109,11 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 			return nil, fmt.Errorf("apply build option: %w", err)
 		}
 	}
+
+	// v0.14.5: inject the (possibly overridden) credential store into all
+	// registered engine instances. Done after BuildOptions so
+	// WithCredentialStore takes effect before any Generate call.
+	b.injectCredentialStore()
 
 	// v0.14.1: WithProvider options may have created the manager — ensure it
 	// is registered before registerDefaults.
@@ -456,6 +472,23 @@ func (b *Builder) registerProviderManager() {
 	b.registry.Register(b.providerManager)
 }
 
+// injectCredentialStore hands the app-scoped CredentialStore to every
+// registered engine instance that implements provider.CredentialStoreAware.
+func (b *Builder) injectCredentialStore() {
+	if b.providerManager == nil || b.credStore == nil {
+		return
+	}
+	for _, name := range provider.RegisteredEngines() {
+		impl := b.providerManager.Get(name)
+		if impl == nil {
+			continue
+		}
+		if aware, ok := impl.(provider.CredentialStoreAware); ok {
+			aware.SetCredentialStore(b.credStore)
+		}
+	}
+}
+
 func (b *Builder) buildInterface() iface.Interface {
 	switch b.config.Interface.Type {
 	case "cli":
@@ -502,6 +535,17 @@ func WithProvider(name string, p provider.IProvider) BuildOption {
 		if err := mgr.Register(name, p); err != nil {
 			return err
 		}
+		return nil
+	}
+}
+
+// WithCredentialStore overrides the app-scoped CredentialStore used to
+// resolve provider API keys (v0.14.5). The default is a FileCredentialStore
+// at ~/.gogent/apps/<app-name>/credentials.yaml. App developers can inject
+// their own implementation (Vault, keyring, etc.).
+func WithCredentialStore(s provider.CredentialStore) BuildOption {
+	return func(b *Builder) error {
+		b.credStore = s
 		return nil
 	}
 }
