@@ -405,7 +405,7 @@ pkg/provider/
 ├── deepseek.go              # DeepSeekProvider ✅ v0.14.2（OpenAI 兼容薄包装）
 ├── gemini.go                # GeminiProvider ⏳ TODO（v0.14.3 规划）
 ├── anthropic.go             # AnthropicProvider ⏳ TODO（v0.14.4 规划）
-├── credentials.go           # CredentialStore 接口 + 默认实现 ⏳ TODO（v0.14.5）
+├── credentials.go           # CredentialStore 接口 + FileCredentialStore ✅ v0.14.5
 └── *_test.go                # 各 Provider 单元测试
 ```
 
@@ -467,37 +467,42 @@ pkg/provider/
 
 **关键原则**：配置文件**不包含 secrets**。配置存稳定的、非敏感的信息（URL、默认模型名等）；密钥存 OS keyring / 加密凭证文件。
 
-### 6.2 与现有 internal/credentials/ 的关系
+### 6.2 与现有 internal/credentials/ 的关系（✅ 已定稿）
 
 项目已有 `~/.gogent/credentials.yaml`（0600）+ `Resolver`（${VAR} 解析 + fsnotify 热加载），被 tool/sandbox 共用。
 
-**设计取舍**：
+**决策**：复用 `internal/credentials` 的**加载/解析/合并逻辑**（`LoadCredentials`/`WriteCredentials`/`DeleteCredentials`），但凭证文件**按 app 隔离**——`FileCredentialStore` 写入 `~/.gogent/apps/<app-name>/credentials.yaml`，不共用 daemon 文件。
+
+> 注：`pkg/provider` 与 `internal/credentials` 同属 `github.com/tltre/gogent/` 模块树，可正常导入（早期文档"internal 无法被 pkg 引用"的顾虑不成立）。
+
+对比记录（设计时选项）：
 
 ```
-方案 X：直接复用 internal/credentials（credentials.yaml）
-  ✅ 零新增依赖，与现有子系统一致
-  ❌ 明文 YAML（0600 权限），无加密；不满足 Tier 1 最佳实践
-  ❌ internal/ 包无法被 pkg/ 下公共 API 引用（Go internal 规则）
+方案 X：直接复用 internal/credentials（共用 daemon 的 credentials.yaml）
+  ❌ 否决 —— 多 agent 应用的 provider 凭证与 daemon 工具/沙箱凭证混淆
 
 方案 Y：新建 CredentialStore 抽象，默认实现走 keyring
-  ✅ 符合行业最佳实践（Tier 1 优先）
-  ✅ 可注入自定义实现（企业 Vault 等）
-  ❌ 需引入第三方 keyring 依赖（zalando/go-keyring 或 byteness/keyring）
+  ⚠️ 延后 —— 需引入第三方 keyring 依赖；接口已抽象，后续可无痛升级
 
-方案 Z：CredentialStore 抽象 + 默认实现封装现有 credentials.yaml
-  ✅ 复用现有基础设施，无新依赖
-  ✅ 提供注入点，后续可替换为 keyring 实现
-  ❌ 默认安全性弱于 keyring（但 0600 + 明文与项目现状一致）
+方案 Z：CredentialStore 抽象 + 默认实现封装现有 credentials.yaml（✅ 采用）
+  ✅ 复用 internal/credentials 逻辑，零新依赖
+  ✅ 按 app 隔离（apps/<name>/credentials.yaml），不与 daemon 文件混淆
+  ✅ 提供 WithCredentialStore 注入点，可替换为 Vault/keyring
 ```
 
-### 6.3 CredentialStore 接口草案
+### 6.3 CredentialStore 接口（✅ 已定稿）
 
 ```go
 type CredentialStore interface {
-    Get(providerName string) (apiKey string, err error)
+    Get(providerName string) (string, error)   // providerName = 引擎名精确键（"openai"、"deepseek"）
     Set(providerName, apiKey string) error
     Delete(providerName string) error
     List() ([]string, error)  // 已配置凭证的 provider 列表
+}
+
+// 引擎接入（可选接口，Builder 统一注入，无全局状态）：
+type CredentialStoreAware interface {
+    SetCredentialStore(s CredentialStore)
 }
 ```
 
@@ -563,17 +568,25 @@ builder.Build(
 | A-2 | Builder 注入：`ProviderComponent.SetManager(pm)`                                                  | ❌ 否决 |
 | A-3 | 全局注册（`database/sql` 风格）                                                                        | ❌ 否决（全局状态影响测试隔离、多 App 实例冲突） |
 
-### 问题 B：凭证存储的控制权 — ⏳ 待决策（v0.14.5 前定）
+### 问题 B：凭证存储的控制权 — ✅ 已定稿（B-2 变体：app 作用域文件）
 
+**决策**：采用 **B-2 变体**——`CredentialStore` 接口 + 默认实现 `FileCredentialStore` 封装现有 `internal/credentials`（复用加载/解析/合并逻辑，**零新依赖**）。
 
-| 方案  | 描述                                                            |
-| --- | ------------------------------------------------------------- |
-| B-1 | 框架内置 OS keyring + 加密文件 fallback，默认启用（符合行业最佳实践，需引入依赖）          |
-| B-2 | 框架提供 CredentialStore 接口，默认实现封装现有 `internal/credentials`（零新依赖） |
-| B-3 | 混合：默认 OS keyring，但提供 `WithCredentialStore` 覆盖（推荐，兼顾安全与可扩展）    |
+**关键设计：app 作用域隔离**：
 
+```
+~/.gogent/
+├── credentials.yaml                    ← daemon 级（现有，tool/sandbox 凭证，不动）
+├── apps/
+    └── <app-name>/
+        └── credentials.yaml            ← app 级 provider 凭证（v0.14.5 新增）
+```
 
-**待决策。**
+- **不使用 daemon 的 `~/.gogent/credentials.yaml`**——避免多 agent 应用的 provider 凭证与 daemon 工具/沙箱凭证混淆
+- 文件结构：**精确键**（`openai: "sk-..."`），不兼容大写命名
+- `Get(providerName)` 精确键查找；`WithCredentialStore` 可注入自定义实现（Vault/keyring）
+- 引擎 key 解析优先级：**CredentialStore > 构造时 env**（v0.14.2 行为向后兼容）
+- 注入机制：`CredentialStoreAware` 可选接口，Builder 在 opts 应用后统一注入（无全局状态）
 
 ### 问题 C：ProcessProvider 的配置字段去留 — ✅ 部分定稿
 
@@ -661,9 +674,11 @@ v0.14.4 — Anthropic ⏳ 待实现
     ├── pkg/provider/anthropic.go                 Claude API（注册进引擎注册表）
     └── pkg/provider/anthropic_test.go
 
-v0.14.5 — 凭证管理
-    ├── pkg/provider/credentials.go               CredentialStore 接口 + 默认实现
-    └── 解决 问题 B（凭证方案）
+v0.14.5 — 凭证管理 ✅ 已完成
+    ├── pkg/provider/credentials.go               CredentialStore 接口 + FileCredentialStore（app 作用域）
+    ├── pkg/provider/openai.go + deepseek.go      引擎接入 CredentialStoreAware（store 优先，env fallback）
+    ├── pkg/app/builder.go                        WithCredentialStore + 默认 store + injectCredentialStore
+    └── 已定稿：问题 B（B-2 变体：app 作用域文件，精确键）
 
 v0.14.6 — Interface 层多 Provider 交互
     ├── pkg/iface/cli/cmd_chat.go                 /provider 命令
