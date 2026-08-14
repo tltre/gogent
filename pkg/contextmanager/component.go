@@ -28,6 +28,11 @@ func (c *ContextManagerComponent) GetType() component.ComponentType {
 
 func (c *ContextManagerComponent) Initialize(ctx context.Context, registry *component.Registry) error {
 	c.SetRegistry(registry)
+	// v0.15.2: inject the registry into managers that need it to resolve
+	// dependencies (DefaultContextManager resolves Memory via BuildInput).
+	if ra, ok := c.manager.(registryAware); ok {
+		ra.SetRegistry(registry)
+	}
 	c.log(ctx, logger.InfoLevel, "context manager initialized")
 	return nil
 }
@@ -43,7 +48,14 @@ func (c *ContextManagerComponent) Stop(ctx context.Context) error {
 }
 
 func (c *ContextManagerComponent) Dependencies() map[string]component.DependencySpec {
-	return nil
+	return map[string]component.DependencySpec{
+		// v0.15.2: DefaultContextManager.BuildInput recalls memory through the
+		// registry; declare the dependency for correct topological ordering.
+		"Memory": {
+			Type:     component.ComponentMemory,
+			Required: false,
+		},
+	}
 }
 
 func (c *ContextManagerComponent) NewSession() string {
@@ -86,6 +98,10 @@ func (c *ContextManagerComponent) DeleteSession(sessionId string) {
 
 func (c *ContextManagerComponent) ListSessions() []string {
 	return c.manager.ListSessions()
+}
+
+func (c *ContextManagerComponent) BuildInput(sessionId string, messages []ContextMessage) []ContextMessage {
+	return c.manager.BuildInput(sessionId, messages)
 }
 
 func (c *ContextManagerComponent) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {

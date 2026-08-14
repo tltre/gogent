@@ -79,4 +79,15 @@ type IContextManager interface {
 	//  @return []string session IDs
 	//
 	ListSessions() []string
+
+	//
+	// BuildInput
+	//  @Description: assemble the complete model input for an agent run:
+	//  system prompt (with recalled memory) + session history + user messages.
+	//  The agent treats ContextManager as its single input source.
+	//  @param sessionId
+	//  @param messages user messages for this run
+	//  @return []ContextMessage complete input (system + history + user)
+	//
+	BuildInput(sessionId string, messages []ContextMessage) []ContextMessage
 }

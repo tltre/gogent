@@ -461,10 +461,13 @@ var componentDefaults = map[component.ComponentType]func() component.Component{
 		m := memory.NewDefaultMemory()
 		return memory.NewComponent("memory-default", m)
 	},
+	component.ComponentContextManager: func() component.Component {
+		cm := contextmanager.NewDefaultContextManager()
+		return contextmanager.NewComponent("contextmanager-default", cm)
+	},
 	// TODO: default provider
 	// TODO: default tool
 	// TODO: default hook
-	// TODO: default contextmanager
 	// TODO: default channel
 }
 

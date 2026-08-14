@@ -16,6 +16,11 @@ type Input struct {
 	// ModelName selects the model within the chosen provider.
 	// Empty means the provider's default model (v0.14.7).
 	ModelName string
+
+	// SessionID identifies the conversation session (v0.15.2). Non-empty
+	// enables cross-turn history via ContextManager; empty = stateless single
+	// call. The CLI chat maintains it across user turns.
+	SessionID string
 }
 
 type Output struct {

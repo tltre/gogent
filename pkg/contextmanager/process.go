@@ -126,6 +126,19 @@ func (c *ProcessContextManager) BuildSystemPrompt(sessionId string) string {
 	return resp.SystemPrompt
 }
 
+// BuildInput assembles the complete model input. There is no remote BuildInput
+// RPC yet, so this degrades to a local assembly (system prompt + history +
+// user messages). Memory injection for the remote path is a follow-up.
+func (c *ProcessContextManager) BuildInput(sessionId string, messages []ContextMessage) []ContextMessage {
+	input := make([]ContextMessage, 0, len(messages)+8)
+	if sys := c.BuildSystemPrompt(sessionId); sys != "" {
+		input = append(input, ContextMessage{Role: "system", Content: sys})
+	}
+	input = append(input, c.GetMessages(sessionId)...)
+	input = append(input, messages...)
+	return input
+}
+
 // Clear removes all messages from a session while keeping the session alive via gRPC.
 func (c *ProcessContextManager) Clear(sessionId string) error {
 	client, err := c.getClient()
