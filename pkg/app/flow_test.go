@@ -161,7 +161,9 @@ components:
 	if out.Response.Content != "flow-reply-flow-b" {
 		t.Errorf("Response.Content = %q, want flow-reply-flow-b", out.Response.Content)
 	}
-	if len(a.LastMessages) != 0 || len(b.LastMessages) != 1 {
+	// Routing: flow-a untouched, flow-b invoked (its message list includes the
+	// default system prompt added by BuildInput, so length is >= 1).
+	if len(a.LastMessages) != 0 || len(b.LastMessages) == 0 {
 		t.Fatalf("routing wrong: flow-a msgs=%d flow-b msgs=%d", len(a.LastMessages), len(b.LastMessages))
 	}
 }
@@ -283,7 +285,7 @@ components:
 	if err := root.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run command = %v", err)
 	}
-	if len(b.LastMessages) != 1 {
+	if len(b.LastMessages) == 0 {
 		t.Fatalf("flow-b not invoked, msgs=%d", len(b.LastMessages))
 	}
 	if got := provider.ModelFrom(b.LastCtx); got != "m-flow-b" {
@@ -330,14 +332,17 @@ components:
 		t.Fatalf("iface.Run() = %v", err)
 	}
 
-	if len(b.LastMessages) != 1 {
+	if len(b.LastMessages) == 0 {
 		t.Fatalf("flow-b not invoked via chat, msgs=%d", len(b.LastMessages))
 	}
 	if got := provider.ProviderNameFrom(b.LastCtx); got != "flow-b" {
 		t.Errorf("provider via ctx = %q, want flow-b", got)
 	}
-	if got := b.LastMessages[0].Content; got != "hello" {
-		t.Errorf("message content = %q, want hello", got)
+	// Last message is the user's "hello" (earlier entries: system prompt
+	// added by BuildInput).
+	last := b.LastMessages[len(b.LastMessages)-1]
+	if last.Content != "hello" {
+		t.Errorf("last message content = %q, want hello", last.Content)
 	}
 }
 
