@@ -506,25 +506,40 @@ type CredentialStoreAware interface {
 }
 ```
 
-**终端用户体验（首次运行）**：
+**终端用户体验（交互式配置，chat REPL 内 `/key` 命令）**：
 
 ```
-$ ./my-agent
+$ ./my-agent chat
 
-Welcome! First-time setup...
+> /key
+Provider credentials:
+  openai     (not configured)
+  deepseek   (not configured)
 
-[1] OpenAI        — no key configured
-[2] Google Gemini — no key configured
-[3] Anthropic     — no key configured
+> /key openai sk-xxxxxxxxxxxx
+Saved API key for openai
 
-Select a provider to configure: 1
-Enter your OpenAI API key: ************
-Validating... ✓
-Key saved
+> /key
+Provider credentials:
+  openai     ****xxxx          ← 密钥脱敏显示
+  deepseek   (not configured)
 
 > /provider openai
-Switched to OpenAI
+Switched to openai (model: gpt-4o)
+> 你好
+（立即使用刚配置的 openai key，无需重启/编辑文件）
 ```
+
+**命令语义**：
+
+| 命令 | 行为 |
+|------|------|
+| `/key` | 列出所有 provider 的凭证状态（密钥脱敏） |
+| `/key <name>` | 查看单个 provider 凭证状态 |
+| `/key <name> <apiKey>` | 设置凭证（写 app 作用域 credentials.yaml，立即生效） |
+| `/key <name> --delete` | 删除凭证 |
+
+> 凭证写入 `~/.gogent/apps/<app-name>/credentials.yaml`（app 作用域，精确键）；引擎在每次 Generate 时动态解析 key（v0.14.5 设计），因此 `/key` 设置后下一条消息即生效，无需重启。
 
 **Builder 接入点**：
 

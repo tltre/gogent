@@ -57,8 +57,15 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 			return nil
 		}
 
-		// Handle /provider and /model REPL commands (v0.14.6).
+		// Handle /provider, /model and /key REPL commands (v0.14.x).
 		if handled, cont := handleProviderCommand(mgr, input, &currentProvider, &currentModel); handled {
+			if !cont {
+				return nil
+			}
+			fmt.Fprint(os.Stdout, cli.Prompt)
+			continue
+		}
+		if handled, cont := handleKeyCommand(mgr, cli.credStore, input); handled {
 			if !cont {
 				return nil
 			}

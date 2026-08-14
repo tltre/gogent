@@ -507,6 +507,9 @@ func (b *Builder) buildInterface() iface.Interface {
 	case "cli":
 		c := cli.New(b.config.Interface.CLI.Banner, b.config.Interface.CLI.Prompt)
 		cli.RegisterByPath(c, b.cliEntries)
+		// v0.14.x: inject the app-scoped CredentialStore so the interactive
+		// /key command can configure provider credentials.
+		c.SetCredentialStore(b.credStore)
 		return c
 	case "tui", "http":
 		// v0.4.3+, currently nil — falls back to blocking bare event loop

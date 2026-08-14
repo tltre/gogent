@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/iface"
+	"github.com/tltre/gogent/pkg/provider"
 )
 
 type DefaultCLI struct {
@@ -17,6 +18,10 @@ type DefaultCLI struct {
 	reg          *component.Registry
 	commands     map[string]*cobra.Command
 	unregistered map[string]bool
+
+	// credStore is injected by the Builder (v0.14.x) for interactive
+	// provider credential configuration (/key command).
+	credStore provider.CredentialStore
 }
 
 var _ iface.Interface = (*DefaultCLI)(nil)
@@ -35,6 +40,12 @@ func New(banner, prompt string) *DefaultCLI {
 
 func (c *DefaultCLI) Registry() *component.Registry {
 	return c.reg
+}
+
+// SetCredentialStore injects the app-scoped CredentialStore used by the
+// /key command to configure provider credentials interactively.
+func (c *DefaultCLI) SetCredentialStore(s provider.CredentialStore) {
+	c.credStore = s
 }
 
 func (c *DefaultCLI) Register(path string, cmd *cobra.Command) {

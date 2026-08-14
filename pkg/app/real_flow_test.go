@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/iface/cli"
 	"github.com/tltre/gogent/pkg/provider"
 )
 
@@ -34,6 +36,12 @@ func newMockLLMServer(t *testing.T) (*mockLLMServer, *httptest.Server) {
 	t.Helper()
 	m := &mockLLMServer{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Model list endpoint (engine ModelInfo fetch).
+		if r.URL.Path == "/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o","object":"model"},{"id":"deepseek-chat","object":"model"}]}`))
+			return
+		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 
@@ -82,8 +90,9 @@ func (m *mockLLMServer) count() int {
 
 // buildRealApp assembles a full app whose engines point at the mock server
 // via OPENAI_BASE_URL / DEEPSEEK_BASE_URL, with credentials in an app-scoped
-// store.
-func buildRealApp(t *testing.T, srvURL string, credEntries map[string]string) *App {
+// store. It returns the app and the injected store (same instance engines and
+// the CLI /key command use).
+func buildRealApp(t *testing.T, srvURL string, credEntries map[string]string) (*App, provider.CredentialStore) {
 	t.Helper()
 
 	t.Setenv(provider.OpenAIEnvBaseURL, srvURL)
@@ -120,7 +129,7 @@ components:
 	if err := built.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize() = %v", err)
 	}
-	return built
+	return built, store
 }
 
 func realRuntime(t *testing.T, built *App) *agentcore.AgentRuntime {
@@ -138,7 +147,7 @@ func realRuntime(t *testing.T, built *App) *agentcore.AgentRuntime {
 
 func TestFlowRealOpenAIRoute(t *testing.T) {
 	mock, srv := newMockLLMServer(t)
-	built := buildRealApp(t, srv.URL, map[string]string{"openai": "sk-openai-flow"})
+	built, _ := buildRealApp(t, srv.URL, map[string]string{"openai": "sk-openai-flow"})
 	runtime := realRuntime(t, built)
 
 	out, err := runtime.Run(context.Background(), agentcore.Input{
@@ -168,7 +177,7 @@ func TestFlowRealOpenAIRoute(t *testing.T) {
 
 func TestFlowRealDeepSeekRoute(t *testing.T) {
 	mock, srv := newMockLLMServer(t)
-	built := buildRealApp(t, srv.URL, map[string]string{"deepseek": "sk-deepseek-flow"})
+	built, _ := buildRealApp(t, srv.URL, map[string]string{"deepseek": "sk-deepseek-flow"})
 	runtime := realRuntime(t, built)
 
 	out, err := runtime.Run(context.Background(), agentcore.Input{
@@ -199,7 +208,7 @@ func TestFlowRealDeepSeekRoute(t *testing.T) {
 func TestFlowRealStoreOverridesEnv(t *testing.T) {
 	mock, srv := newMockLLMServer(t)
 	// No OPENAI_API_KEY env; key only in the store.
-	built := buildRealApp(t, srv.URL, map[string]string{"openai": "sk-store-only"})
+	built, _ := buildRealApp(t, srv.URL, map[string]string{"openai": "sk-store-only"})
 	runtime := realRuntime(t, built)
 
 	if _, err := runtime.Run(context.Background(), agentcore.Input{
@@ -219,7 +228,7 @@ func TestFlowRealStoreOverridesEnv(t *testing.T) {
 
 func TestFlowRealStream(t *testing.T) {
 	mock, srv := newMockLLMServer(t)
-	built := buildRealApp(t, srv.URL, map[string]string{"deepseek": "sk-ds-stream"})
+	built, _ := buildRealApp(t, srv.URL, map[string]string{"deepseek": "sk-ds-stream"})
 	runtime := realRuntime(t, built)
 
 	ch, err := runtime.Stream(context.Background(), agentcore.Input{
@@ -247,5 +256,45 @@ func TestFlowRealStream(t *testing.T) {
 	}
 	if !mock.last().Stream {
 		t.Error("mock received stream=false, want true")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Interactive /key configuration end-to-end: set a key in the REPL, then a
+// message must use it immediately.
+// ---------------------------------------------------------------------------
+
+func TestFlowChatConfiguresKeyThenUsesIt(t *testing.T) {
+	mock, srv := newMockLLMServer(t)
+	built, store := buildRealApp(t, srv.URL, nil) // no credentials pre-configured
+	runtime := realRuntime(t, built)
+	_ = runtime
+
+	// Drive the chat REPL: switch to openai, set its key via /key, then send
+	// a message (default engine is deepseek — alphabetical first).
+	input := "/provider openai\n/key openai sk-interactive\nhello\nquit\n"
+	oldStdin := os.Stdin
+	r, w, _ := os.Pipe()
+	_, _ = w.WriteString(input)
+	_ = w.Close()
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	iface := cli.New("", "> ")
+	iface.SetCredentialStore(store) // same store instance engines use
+	built.SetInterface(iface)
+	if err := iface.Run(context.Background(), built.Registry()); err != nil {
+		t.Fatalf("iface.Run() = %v", err)
+	}
+
+	if mock.count() == 0 {
+		t.Fatal("no chat request hit the mock server")
+	}
+	rec := mock.last()
+	if rec.Auth != "Bearer sk-interactive" {
+		t.Errorf("auth = %q, want Bearer sk-interactive (set interactively via /key)", rec.Auth)
+	}
+	if rec.Model != "gpt-4o" {
+		t.Errorf("model = %q, want gpt-4o (openai default)", rec.Model)
 	}
 }

@@ -9,9 +9,9 @@
 # 步骤 1：写示例配置
 #   已提供 config/provider-verify.yaml（见下）
 #
-# 步骤 2：写 app 作用域凭证文件
-#   mkdir -p ~/.gogent/apps/verify-agent
-#   编辑 ~/.gogent/apps/verify-agent/credentials.yaml：
+# 步骤 2：配置凭证（两种方式任选）
+#   方式 A（推荐，交互式）：进入 chat 后用 /key 命令配置
+#   方式 B（脚本/CI）：直接编辑 ~/.gogent/apps/verify-agent/credentials.yaml：
 #     openai: "sk-你的 OPENAI key"
 #     deepseek: "sk-你的 DEEPSEEK key"
 #   （文件权限建议 0600；不配置的供应商会自动降级跳过）
@@ -30,6 +30,12 @@
 #   （若框架 CLI 无 -i，则进入 agent 后执行 chat 子命令）
 #
 #   在 REPL 中依次验证：
+#   > /key openai sk-你的OPENAIkey
+#     期望：Saved API key for openai（交互配置，无需编辑文件）
+#   > /key deepseek sk-你的DEEPSEEKkey
+#     期望：Saved API key for deepseek
+#   > /key
+#     期望：列出 openai + deepseek，密钥脱敏
 #   > /provider
 #     期望：列出 openai + deepseek，标注当前
 #   > /provider deepseek
@@ -42,10 +48,13 @@
 #     期望：使用 deepseek-reasoner 的真实回复
 #   > /provider openai
 #     期望：切回 openai，model 重置为默认
+#   > 你好
+#     期望：使用刚 /key 配置的 openai key（无需重启）
 #   > quit
 #
 # 验证通过标准：
-#   1. run 命令返回所选 provider/model 的真实回复
-#   2. chat 中 /provider /model 切换生效，消息使用所选引擎
-#   3. 无 key 的供应商在 /provider 列表中出现但调用报错（凭证缺失）
+#   1. /key 交互配置后消息立即使用新 key（无需重启/编辑文件）
+#   2. run 命令返回所选 provider/model 的真实回复
+#   3. chat 中 /provider /model 切换生效，消息使用所选引擎
+#   4. 无 key 的供应商在 /provider 列表中出现但调用报错（凭证缺失）
 # =============================================================================
