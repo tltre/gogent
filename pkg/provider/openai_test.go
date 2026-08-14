@@ -12,7 +12,8 @@ import (
 )
 
 // mockChatServer is a configurable httptest server that records the last
-// request it received and returns a canned response.
+// request it received and returns a canned response. It serves both
+// /chat/completions (canned body) and /models (canned model list).
 type mockChatServer struct {
 	server    *httptest.Server
 	lastPath  string
@@ -20,14 +21,27 @@ type mockChatServer struct {
 	lastBody  map[string]any
 	status    int
 	body      string
+	models    string   // response for GET /models; defaults to a small list
 	checkBody func(t *testing.T, body map[string]any)
 }
 
 func newMockChatServer(t *testing.T, status int, body string) *mockChatServer {
-	m := &mockChatServer{status: status, body: body}
+	m := &mockChatServer{status: status, body: body, models: `{
+		"object": "list",
+		"data": [
+			{"id": "gpt-4o", "object": "model", "owned_by": "openai"},
+			{"id": "gpt-4o-mini", "object": "model", "owned_by": "openai"}
+		]
+	}`}
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.lastPath = r.URL.Path
 		m.lastAuth = r.Header.Get("Authorization")
+		if r.URL.Path == "/models" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(m.status)
+			_, _ = w.Write([]byte(m.models))
+			return
+		}
 		if r.Body != nil {
 			_ = json.NewDecoder(r.Body).Decode(&m.lastBody)
 			if m.checkBody != nil {
@@ -329,10 +343,41 @@ func TestOpenAIModelInfo(t *testing.T) {
 	if !info.SupportsTool || !info.SupportsVision {
 		t.Errorf("ModelInfo.SupportsTool/Vision = %v/%v, want true/true", info.SupportsTool, info.SupportsVision)
 	}
-	if len(info.Models) == 0 {
-		t.Error("ModelInfo.Models empty")
+	// Models come from the dynamic /models endpoint (mock), sorted.
+	if len(info.Models) != 2 || info.Models[0] != "gpt-4o" || info.Models[1] != "gpt-4o-mini" {
+		t.Errorf("ModelInfo.Models = %v, want [gpt-4o gpt-4o-mini] from mock /models", info.Models)
 	}
-	if info.ContextSize <= 0 {
-		t.Errorf("ModelInfo.ContextSize = %d, want > 0", info.ContextSize)
+	// ContextSize is reserved/deferred — must be 0 (not hardcoded).
+	if info.ContextSize != 0 {
+		t.Errorf("ModelInfo.ContextSize = %d, want 0 (reserved/deferred)", info.ContextSize)
+	}
+}
+
+func TestOpenAIFetchModelsCached(t *testing.T) {
+	m := newMockChatServer(t, http.StatusOK, `{}`)
+	p := newTestOpenAI(m)
+
+	// First call fetches; second uses cache (mock would still serve, but the
+	// point is determinism). Verify the auth header on the /models request.
+	_ = p.ModelInfo()
+	_ = p.ModelInfo()
+	if m.lastPath != "/models" {
+		t.Errorf("lastPath = %q, want /models", m.lastPath)
+	}
+	if m.lastAuth != "Bearer test-key" {
+		t.Errorf("auth on /models = %q, want Bearer test-key", m.lastAuth)
+	}
+}
+
+func TestOpenAIFetchModelsFailureEmpty(t *testing.T) {
+	// Server returns 401 for /models — fetch must degrade to empty, not panic.
+	m := newMockChatServer(t, http.StatusOK, `{}`)
+	m.models = `{"error": {"message": "unauthorized"}}`
+	m.status = http.StatusUnauthorized
+	p := newTestOpenAI(m)
+
+	info := p.ModelInfo()
+	if len(info.Models) != 0 {
+		t.Errorf("ModelInfo.Models = %v, want empty on failure (never hardcoded)", info.Models)
 	}
 }

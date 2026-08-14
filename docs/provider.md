@@ -632,12 +632,19 @@ type ModelInfo struct {
     Name           string
     Provider       string    // 引擎名 "openai"
     DisplayName    string    // 品牌名 "OpenAI"（终端用户可见）
-    ContextSize    int
+    ContextSize    int       // ⚠️ reserved/deferred —— 不填充，恒为 0
     SupportsTool   bool
     SupportsVision bool
-    Models         []string  // 可用模型列表（能力声明）
+    Models         []string  // 模型列表 —— 动态 GET {baseURL}/models 拉取（永不硬编码）
 }
 ```
+
+**模型列表来源（v0.14.7 修正）**：`Models` 由引擎在 `ModelInfo()` 时动态拉取 `GET {baseURL}/models`（OpenAI 兼容格式 `data[].id`），TTL 10 分钟缓存；拉取失败返回空列表。**移除所有硬编码模型名**。
+
+**contextSize deferred（v0.14.7 决策）**：`ContextSize` 字段保留用于接口稳定，但**引擎不填充**（恒为 0）。原因：
+- OpenAI/DeepSeek `/models` 端点不返回 context window（DeepSeek 有 [feature request #687](https://github.com/deepseek-ai/awesome-deepseek-integration/issues/687) 未实现）
+- 业界做法调研：LiteLLM 用集中数据表（`model_prices_and_context_window.json`）、Gemini/Anthropic/OpenRouter 原生 API 返回、Vercel AI SDK 完全不管
+- **后续实现方案**（标记 TODO）：① 原生 API 优先（Gemini `inputTokenLimit` / Anthropic `max_input_tokens` / OpenRouter `context_length` / 自托管 `max_model_len`）② 内置集中规格表兜底（LiteLLM 模式）③ 用户配置覆盖 ④ 未知模型显示 unknown
 
 ### 问题 G：DefaultProvider 的去留 — ✅ 已定稿（保留 + deprecated）
 

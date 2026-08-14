@@ -1,9 +1,10 @@
 package provider
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"time"
-	"net/http"
 )
 
 // DeepSeek REST API endpoints and defaults.
@@ -81,17 +82,16 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 	return p
 }
 
-// ModelInfo returns the static capability declaration of this provider.
+// ModelInfo returns the capability declaration of this provider. The model
+// list is fetched dynamically from the DeepSeek /models endpoint via the
+// shared OpenAI implementation. ContextSize is reserved/deferred.
 func (p *DeepSeekProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
 		Name:           p.model,
 		Provider:       "deepseek",
 		DisplayName:    "DeepSeek",
-		ContextSize:    65536,
 		SupportsTool:   true,
 		SupportsVision: false,
-		Models: []string{
-			"deepseek-chat", "deepseek-reasoner",
-		},
+		Models:         p.OpenAIProvider.fetchModels(context.Background()),
 	}
 }

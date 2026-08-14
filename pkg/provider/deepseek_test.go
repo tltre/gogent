@@ -67,7 +67,16 @@ func TestDeepSeekModelOverride(t *testing.T) {
 }
 
 func TestDeepSeekModelInfo(t *testing.T) {
-	p := NewDeepSeek(DeepSeekConfig{})
+	m := newMockChatServer(t, http.StatusOK, `{}`)
+	m.models = `{
+		"object": "list",
+		"data": [
+			{"id": "deepseek-chat", "object": "model"},
+			{"id": "deepseek-reasoner", "object": "model"}
+		]
+	}`
+	p := NewDeepSeek(DeepSeekConfig{APIKey: "k"})
+	p.baseURL = m.server.URL
 
 	info := p.ModelInfo()
 	if info.Provider != "deepseek" || info.DisplayName != "DeepSeek" {
@@ -79,8 +88,12 @@ func TestDeepSeekModelInfo(t *testing.T) {
 	if info.SupportsVision != false {
 		t.Errorf("SupportsVision = %v, want false", info.SupportsVision)
 	}
-	if len(info.Models) != 2 || info.Models[0] != "deepseek-chat" {
-		t.Errorf("Models = %v, want [deepseek-chat deepseek-reasoner]", info.Models)
+	// Models fetched dynamically from the mock /models endpoint.
+	if len(info.Models) != 2 || info.Models[0] != "deepseek-chat" || info.Models[1] != "deepseek-reasoner" {
+		t.Errorf("Models = %v, want [deepseek-chat deepseek-reasoner] from mock /models", info.Models)
+	}
+	if info.ContextSize != 0 {
+		t.Errorf("ContextSize = %d, want 0 (reserved/deferred)", info.ContextSize)
 	}
 }
 

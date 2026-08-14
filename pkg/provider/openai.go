@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -63,6 +65,12 @@ type OpenAIProvider struct {
 	// credStore, when injected (CredentialStoreAware), takes priority over
 	// apiKey when resolving the key at Generate/Stream time (v0.14.5).
 	credStore CredentialStore
+
+	// Model-list cache: fetched once from {baseURL}/models and reused for
+	// modelsCacheTTL to avoid a request on every ModelInfo() call.
+	modelsMu         sync.Mutex
+	modelsCache      []string
+	modelsFetchedAt  time.Time
 }
 
 var _ IProvider = (*OpenAIProvider)(nil)
@@ -218,20 +226,85 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage)
 	return ch, nil
 }
 
-// ModelInfo returns the static capability declaration of this provider.
+// ModelInfo returns the capability declaration of this provider. The model
+// list is fetched dynamically from {baseURL}/models (never hardcoded).
+// ContextSize is reserved/deferred — not populated (see ModelInfo note).
 func (p *OpenAIProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
 		Name:           p.model,
 		Provider:       "openai",
 		DisplayName:    "OpenAI",
-		ContextSize:    128000,
 		SupportsTool:   true,
 		SupportsVision: true,
-		Models: []string{
-			"gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
-			"o3-mini", "o4-mini",
-		},
+		Models:         p.fetchModels(context.Background()),
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Model list (dynamic fetch)
+// ---------------------------------------------------------------------------
+
+// modelsCacheTTL controls how long a fetched model list is reused.
+const modelsCacheTTL = 10 * time.Minute
+
+// fetchModels returns the provider's available models, fetched once from
+// {baseURL}/models and cached for modelsCacheTTL. On any failure (network,
+// auth, malformed) it returns an empty list — models are never hardcoded.
+func (p *OpenAIProvider) fetchModels(ctx context.Context) []string {
+	p.modelsMu.Lock()
+	defer p.modelsMu.Unlock()
+
+	if p.modelsCache != nil && time.Since(p.modelsFetchedAt) < modelsCacheTTL {
+		return p.modelsCache
+	}
+
+	models := p.fetchModelsRemote(ctx)
+	p.modelsCache = models
+	p.modelsFetchedAt = time.Now()
+	return models
+}
+
+// fetchModelsRemote performs the GET {baseURL}/models request and parses the
+// OpenAI-compatible {data: [{id, ...}]} response.
+func (p *OpenAIProvider) fetchModelsRemote(ctx context.Context) []string {
+	apiKey, err := p.resolveAPIKey()
+	if err != nil {
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		p.baseURL+"/models", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4*1024*1024)).Decode(&out); err != nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			names = append(names, m.ID)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ---------------------------------------------------------------------------
