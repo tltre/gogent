@@ -147,6 +147,67 @@ func TestOpenAIGenerateToolCall(t *testing.T) {
 	}
 }
 
+// TestOpenAIMultiTurnToolWire verifies the v0.15.1 wire mapping: an assistant
+// message echoing tool_calls, followed by a tool result linked via
+// tool_call_id, are serialized into the request body correctly.
+func TestOpenAIMultiTurnToolWire(t *testing.T) {
+	m := newMockChatServer(t, http.StatusOK, `{"choices":[{"message":{"content":"final"},"finish_reason":"stop"}]}`)
+	m.checkBody = func(t *testing.T, body map[string]any) {
+		msgs, ok := body["messages"].([]any)
+		if !ok || len(msgs) != 3 {
+			t.Fatalf("messages = %v, want 3 entries", body["messages"])
+		}
+
+		// messages[0]: user
+		// messages[1]: assistant echoing tool_calls
+		assistant := msgs[1].(map[string]any)
+		if assistant["role"] != "assistant" {
+			t.Errorf("msgs[1].role = %v, want assistant", assistant["role"])
+		}
+		tcs, ok := assistant["tool_calls"].([]any)
+		if !ok || len(tcs) != 1 {
+			t.Fatalf("msgs[1].tool_calls = %v, want 1 entry", assistant["tool_calls"])
+		}
+		tc := tcs[0].(map[string]any)
+		if tc["id"] != "call_1" || tc["type"] != "function" {
+			t.Errorf("tool_call = %v, want id=call_1 type=function", tc)
+		}
+		fn := tc["function"].(map[string]any)
+		if fn["name"] != "get_weather" {
+			t.Errorf("tool_call.function.name = %v, want get_weather", fn["name"])
+		}
+		// Args map must round-trip back to a JSON string.
+		if args, ok := fn["arguments"].(string); !ok || args != `{"city":"Tokyo"}` {
+			t.Errorf("tool_call.function.arguments = %v, want JSON string", fn["arguments"])
+		}
+
+		// messages[2]: tool result with tool_call_id
+		toolMsg := msgs[2].(map[string]any)
+		if toolMsg["role"] != "tool" {
+			t.Errorf("msgs[2].role = %v, want tool", toolMsg["role"])
+		}
+		if toolMsg["tool_call_id"] != "call_1" {
+			t.Errorf("msgs[2].tool_call_id = %v, want call_1", toolMsg["tool_call_id"])
+		}
+		if toolMsg["content"] != "20°C" {
+			t.Errorf("msgs[2].content = %v, want 20°C", toolMsg["content"])
+		}
+	}
+	p := newTestOpenAI(m)
+
+	_, err := p.Generate(context.Background(), []ProviderMessage{
+		{Role: "user", Content: "weather in Tokyo"},
+		{
+			Role: "assistant", Content: "",
+			ToolCalls: []ToolCall{{ID: "call_1", Name: "get_weather", Args: map[string]any{"city": "Tokyo"}}},
+		},
+		{Role: "tool", Content: "20°C", ToolCallID: "call_1"},
+	})
+	if err != nil {
+		t.Fatalf("Generate() = %v", err)
+	}
+}
+
 func TestOpenAIGenerateToolsInRequest(t *testing.T) {
 	m := newMockChatServer(t, http.StatusOK, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
 	m.checkBody = func(t *testing.T, body map[string]any) {

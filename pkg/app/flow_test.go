@@ -340,3 +340,32 @@ components:
 		t.Errorf("message content = %q, want hello", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// v0.15.1: Builder injects the tool-calling surface into AgentRuntime
+// ---------------------------------------------------------------------------
+
+func TestFlowToolServiceInjected(t *testing.T) {
+	registerFlowMocks(t)
+
+	app, runtime := buildFlowApp(t, `
+name: flow-tools
+components:
+  - name: "provider-main"
+    type: "provider"
+    driver: "native"
+    config:
+      exclude: ["openai", "deepseek"]
+  - name: "agent-main"
+    type: "agentcore"
+    driver: "native"
+    config:
+      type: "react"
+`)
+	_ = app
+
+	// After a full Build, the AgentRuntime must expose a tool.Service.
+	if rt := runtime.ToolService(); rt == nil {
+		t.Fatal("AgentRuntime.ToolService() = nil after Build, want injected ToolManager")
+	}
+}

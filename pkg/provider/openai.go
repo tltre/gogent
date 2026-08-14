@@ -473,10 +473,24 @@ type chatRequest struct {
 }
 
 type chatMessage struct {
-	Role    string          `json:"role"`
-	Content string          `json:"content,omitempty"`
-	Tools   []chatTool      `json:"-"`
-	ToolID  string          `json:"tool_call_id,omitempty"`
+	Role      string          `json:"role"`
+	Content   string          `json:"content,omitempty"`
+	Tools     []chatTool      `json:"-"`
+	ToolCalls []chatToolCall  `json:"tool_calls,omitempty"` // assistant 回传
+	ToolID    string          `json:"tool_call_id,omitempty"` // tool 结果关联
+}
+
+// chatToolCall mirrors an assistant message's tool_calls entry (echoed back
+// to the provider in multi-turn tool calling).
+type chatToolCall struct {
+	ID       string          `json:"id"`
+	Type     string          `json:"type"` // "function"
+	Function chatToolCallFn  `json:"function"`
+}
+
+type chatToolCallFn struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON string
 }
 
 type chatTool struct {
@@ -501,7 +515,20 @@ func buildChatRequest(model string, messages []ProviderMessage, stream bool) cha
 	}
 
 	for _, m := range messages {
-		cm := chatMessage{Role: m.Role, Content: m.Content}
+		cm := chatMessage{Role: m.Role, Content: m.Content, ToolID: m.ToolCallID}
+		// Assistant tool_calls echo (v0.15.1): map ToolCall.Args back to the
+		// JSON-string arguments form the wire requires.
+		for _, tc := range m.ToolCalls {
+			args, _ := json.Marshal(tc.Args)
+			cm.ToolCalls = append(cm.ToolCalls, chatToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: chatToolCallFn{
+					Name:      tc.Name,
+					Arguments: string(args),
+				},
+			})
+		}
 		req.Messages = append(req.Messages, cm)
 		if len(m.Tools) > 0 && len(req.Tools) == 0 {
 			for _, t := range m.Tools {

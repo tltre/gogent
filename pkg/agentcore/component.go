@@ -6,11 +6,17 @@ import (
 
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/logger"
+	"github.com/tltre/gogent/pkg/tool"
 )
 
 type AgentRuntime struct {
 	component.BasicComponent
 	Agent IAgentCore
+
+	// toolService is the framework-managed tool-calling surface injected by
+	// the Builder (v0.15.1). It exposes only List/Execute — lifecycle is
+	// owned by App via the ToolManager. Any IAgentCore may access it.
+	toolService tool.Service
 }
 
 func NewComponent(name string, agent IAgentCore) *AgentRuntime {
@@ -26,6 +32,18 @@ func (c *AgentRuntime) GetType() component.ComponentType {
 
 func (c *AgentRuntime) Reg() *component.Registry {
 	return c.Registry()
+}
+
+// SetToolService injects the tool-calling surface (called by Builder after
+// ToolManager creation; the concrete *ToolManager satisfies tool.Service).
+func (c *AgentRuntime) SetToolService(s tool.Service) {
+	c.toolService = s
+}
+
+// ToolService returns the tool-calling surface available to agents, or nil
+// when no tool manager is configured.
+func (c *AgentRuntime) ToolService() tool.Service {
+	return c.toolService
 }
 
 func (c *AgentRuntime) Initialize(ctx context.Context, registry *component.Registry) error {

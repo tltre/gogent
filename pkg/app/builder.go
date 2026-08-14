@@ -158,6 +158,15 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		}
 	}
 
+	// v0.15.1: expose the tool-calling surface to the agent core. Any
+	// IAgentCore can access it via AgentRuntime.ToolService(); lifecycle
+	// (Start/Stop/dial) stays owned by App through ToolManager.
+	if rtComp := b.registry.GetDefault(component.ComponentAgentCore); rtComp != nil {
+		if rt, ok := rtComp.(*agentcore.AgentRuntime); ok {
+			rt.SetToolService(tm)
+		}
+	}
+
 	app := &App{
 		config:      b.config,
 		registry:    b.registry,
