@@ -83,7 +83,10 @@ func resolveProvider(mgr *provider.ProviderManager, name string) (*provider.Prov
 }
 
 // resolveModel validates a model name against the provider's supported list.
-// Empty model returns the provider's default model.
+// Empty model returns the provider's default model; if none is resolvable
+// (e.g. the /models list has not been fetched because no key is configured
+// yet), it returns "" without error so provider switching is never blocked —
+// the engine resolves the model dynamically at Generate time.
 func resolveModel(info *provider.ProviderInfo, model string) (string, error) {
 	if model == "" {
 		if info.DefaultModel != "" {
@@ -92,7 +95,7 @@ func resolveModel(info *provider.ProviderInfo, model string) (string, error) {
 		if len(info.Models) > 0 {
 			return info.Models[0], nil
 		}
-		return "", fmt.Errorf("provider %q has no default model", info.Name)
+		return "", nil
 	}
 	for _, m := range info.Models {
 		if m == model {

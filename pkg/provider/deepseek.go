@@ -21,10 +21,6 @@ const (
 	// DeepSeekEnvBaseURL overrides the API base URL via environment (proxy /
 	// gateway / mock server in tests).
 	DeepSeekEnvBaseURL = "DEEPSEEK_BASE_URL"
-
-	// DefaultDeepSeekModel is used when neither configuration nor the
-	// DEEPSEEK_MODEL environment variable provides a model.
-	DefaultDeepSeekModel = "deepseek-chat"
 )
 
 // init registers the "deepseek" engine into the engine registry.
@@ -38,7 +34,7 @@ func init() {
 // All fields are optional — zero values fall back to defaults.
 type DeepSeekConfig struct {
 	APIKey     string        // default: DEEPSEEK_API_KEY env
-	Model      string        // default: DEEPSEEK_MODEL env, then DefaultDeepSeekModel
+	Model      string        // default: DEEPSEEK_MODEL env, then the first model from /models (never hardcoded)
 	Timeout    time.Duration // default 60s
 	HTTPClient *http.Client  // override transport (tests, proxy, etc.)
 }
@@ -60,9 +56,8 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 	if model == "" {
 		model = os.Getenv(DeepSeekEnvModel)
 	}
-	if model == "" {
-		model = DefaultDeepSeekModel
-	}
+	// No hardcoded fallback: empty model resolves lazily to the first model
+	// from /models (see OpenAIProvider.resolveDefaultModel).
 	baseURL := DeepSeekBaseURL
 	if env := os.Getenv(DeepSeekEnvBaseURL); env != "" {
 		baseURL = env
@@ -83,11 +78,12 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 }
 
 // ModelInfo returns the capability declaration of this provider. The model
-// list is fetched dynamically from the DeepSeek /models endpoint via the
-// shared OpenAI implementation. ContextSize is reserved/deferred.
+// list and the default model are fetched dynamically from the DeepSeek
+// /models endpoint via the shared OpenAI implementation (never hardcoded).
+// ContextSize is reserved/deferred.
 func (p *DeepSeekProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
-		Name:           p.model,
+		Name:           p.OpenAIProvider.resolveDefaultModel(context.Background()),
 		Provider:       "deepseek",
 		DisplayName:    "DeepSeek",
 		SupportsTool:   true,

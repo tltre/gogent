@@ -347,9 +347,26 @@ func TestOpenAIModelInfo(t *testing.T) {
 	if len(info.Models) != 2 || info.Models[0] != "gpt-4o" || info.Models[1] != "gpt-4o-mini" {
 		t.Errorf("ModelInfo.Models = %v, want [gpt-4o gpt-4o-mini] from mock /models", info.Models)
 	}
+	// Default model resolves to the first /models entry (no hardcode).
+	if info.Name != "gpt-4o" {
+		t.Errorf("ModelInfo.Name = %q, want gpt-4o (first from mock /models)", info.Name)
+	}
 	// ContextSize is reserved/deferred — must be 0 (not hardcoded).
 	if info.ContextSize != 0 {
 		t.Errorf("ModelInfo.ContextSize = %d, want 0 (reserved/deferred)", info.ContextSize)
+	}
+}
+
+func TestOpenAIGenerateDefaultModelDynamic(t *testing.T) {
+	m := newMockChatServer(t, http.StatusOK, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	// No configured model → Generate resolves to the first /models entry.
+	p := NewOpenAI(OpenAIConfig{BaseURL: m.server.URL, APIKey: "test-key"})
+
+	if _, err := p.Generate(context.Background(), []ProviderMessage{{Role: "user", Content: "hi"}}); err != nil {
+		t.Fatalf("Generate() = %v", err)
+	}
+	if m.lastBody["model"] != "gpt-4o" {
+		t.Errorf("model = %v, want gpt-4o (first from mock /models, not hardcoded)", m.lastBody["model"])
 	}
 }
 

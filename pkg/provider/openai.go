@@ -18,10 +18,6 @@ import (
 // DefaultOpenAIBaseURL is the OpenAI REST API base URL.
 const DefaultOpenAIBaseURL = "https://api.openai.com/v1"
 
-// DefaultOpenAIModel is used when neither configuration nor the
-// OPENAI_MODEL environment variable provides a model.
-const DefaultOpenAIModel = "gpt-4o"
-
 // OpenAIEnvAPIKey is the environment variable holding the OpenAI API key.
 // v0.14.2 resolves keys from the environment; v0.14.5 replaces this with the
 // CredentialStore.
@@ -41,7 +37,7 @@ type OpenAIConfig struct {
 	BaseURL    string        // default DefaultOpenAIBaseURL
 	APIKey     string        // default: APIKeyEnv environment variable
 	APIKeyEnv  string        // env var name for the key (default OPENAI_API_KEY); lets OpenAI-compatible vendors read their own env (DEEPSEEK_API_KEY, ...)
-	Model      string        // default: ModelEnv environment variable, then vendor default
+	Model      string        // default: ModelEnv environment variable, then the first model from /models (never hardcoded)
 	ModelEnv   string        // env var name for the model override (default OPENAI_MODEL)
 	Timeout    time.Duration // default 60s
 	MaxRetries int           // reserved for shared retry layer (future)
@@ -111,9 +107,8 @@ func NewOpenAI(cfg OpenAIConfig) *OpenAIProvider {
 	if model == "" {
 		model = os.Getenv(modelEnv)
 	}
-	if model == "" {
-		model = DefaultOpenAIModel
-	}
+	// No hardcoded fallback: an empty model resolves lazily to the first
+	// model from /models at Generate/ModelInfo time (see resolveDefaultModel).
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 60 * time.Second
@@ -156,12 +151,25 @@ func (p *OpenAIProvider) resolveAPIKey() (string, error) {
 
 // resolveModel returns the model for this request: the context override
 // (v0.14.7, set by the AgentCore from Input.ModelName) if present, otherwise
-// the engine's default model.
+// the engine's default model (config/env, or the first model from /models).
 func (p *OpenAIProvider) resolveModel(ctx context.Context) string {
 	if m := ModelFrom(ctx); m != "" {
 		return m
 	}
-	return p.model
+	return p.resolveDefaultModel(ctx)
+}
+
+// resolveDefaultModel returns the engine's default model: the configured one
+// (cfg.Model or env) if set, otherwise the first model from the dynamically
+// fetched /models list, otherwise "". Models are never hardcoded.
+func (p *OpenAIProvider) resolveDefaultModel(ctx context.Context) string {
+	if p.model != "" {
+		return p.model
+	}
+	if models := p.fetchModels(ctx); len(models) > 0 {
+		return models[0]
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -227,11 +235,12 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage)
 }
 
 // ModelInfo returns the capability declaration of this provider. The model
-// list is fetched dynamically from {baseURL}/models (never hardcoded).
-// ContextSize is reserved/deferred — not populated (see ModelInfo note).
+// list is fetched dynamically from {baseURL}/models (never hardcoded), and
+// the default model (Name) resolves to the first entry of that list when not
+// explicitly configured. ContextSize is reserved/deferred.
 func (p *OpenAIProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
-		Name:           p.model,
+		Name:           p.resolveDefaultModel(context.Background()),
 		Provider:       "openai",
 		DisplayName:    "OpenAI",
 		SupportsTool:   true,

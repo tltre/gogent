@@ -17,6 +17,14 @@ func TestDeepSeekGenerate(t *testing.T) {
 		"choices": [{"message": {"content": "DeepSeek reply"}, "finish_reason": "stop"}],
 		"usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
 	}`)
+	// Mock /models so the dynamic default resolves to deepseek-chat.
+	m.models = `{
+		"object": "list",
+		"data": [
+			{"id": "deepseek-chat", "object": "model"},
+			{"id": "deepseek-reasoner", "object": "model"}
+		]
+	}`
 
 	p := NewDeepSeek(DeepSeekConfig{APIKey: "ds-key"})
 	// Point at the mock server for wire checks.

@@ -215,6 +215,29 @@ func TestHandleProviderSwitch(t *testing.T) {
 	}
 }
 
+func TestHandleProviderSwitchNoModels(t *testing.T) {
+	// A provider whose model info is empty (e.g. /models not fetched because
+	// no key configured) must still allow switching — the model stays empty
+	// and the engine resolves it at Generate time.
+	mgr := provider.NewManagerComponent("provider-manager")
+	empty := &testProvider{info: provider.ModelInfo{Provider: "empty"}} // no Name/Models
+	if err := mgr.Register("empty", empty); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+
+	currentProvider, currentModel := "openai", "gpt-4o"
+	handled, cont := handleProviderCommand(mgr, "/provider empty", &currentProvider, &currentModel)
+	if !handled || !cont {
+		t.Fatalf("handled=%v cont=%v, want true,true", handled, cont)
+	}
+	if currentProvider != "empty" {
+		t.Errorf("currentProvider = %q, want empty", currentProvider)
+	}
+	if currentModel != "" {
+		t.Errorf("currentModel = %q, want empty (no default resolvable)", currentModel)
+	}
+}
+
 func TestProviderManagerFromNil(t *testing.T) {
 	cli := New("", "> ")
 	// No provider component registered → nil manager.

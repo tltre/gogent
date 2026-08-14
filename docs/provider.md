@@ -654,7 +654,9 @@ type ModelInfo struct {
 }
 ```
 
-**模型列表来源（v0.14.7 修正）**：`Models` 由引擎在 `ModelInfo()` 时动态拉取 `GET {baseURL}/models`（OpenAI 兼容格式 `data[].id`），TTL 10 分钟缓存；拉取失败返回空列表。**移除所有硬编码模型名**。
+**模型列表与默认模型来源（v0.14.7 修正）**：
+- `Models` 由引擎在 `ModelInfo()` 时动态拉取 `GET {baseURL}/models`（OpenAI 兼容格式 `data[].id`），TTL 10 分钟缓存；拉取失败返回空列表。**移除所有硬编码模型名**。
+- **默认模型**（`ModelInfo.Name` / 引擎未配置 model 时的请求模型）同样**不硬编码**：解析链为 `cfg.Model → env → /models 列表第一个 → 空`（空时由引擎在 Generate 时动态解析，或交供应商 API 默认）。`DefaultOpenAIModel("gpt-4o")` / `DefaultDeepSeekModel("deepseek-chat")` 常量已删除。
 
 **contextSize deferred（v0.14.7 决策）**：`ContextSize` 字段保留用于接口稳定，但**引擎不填充**（恒为 0）。原因：
 - OpenAI/DeepSeek `/models` 端点不返回 context window（DeepSeek 有 [feature request #687](https://github.com/deepseek-ai/awesome-deepseek-integration/issues/687) 未实现）

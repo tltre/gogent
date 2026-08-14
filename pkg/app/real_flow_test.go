@@ -36,10 +36,16 @@ func newMockLLMServer(t *testing.T) (*mockLLMServer, *httptest.Server) {
 	t.Helper()
 	m := &mockLLMServer{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Model list endpoint (engine ModelInfo fetch).
+		// Model list endpoint (engine ModelInfo fetch). Serve per-provider
+		// lists keyed by auth so each engine sees only its own models.
 		if r.URL.Path == "/models" {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o","object":"model"},{"id":"deepseek-chat","object":"model"}]}`))
+			auth := r.Header.Get("Authorization")
+			if strings.HasPrefix(auth, "Bearer sk-ds") {
+				_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","object":"model"},{"id":"deepseek-reasoner","object":"model"}]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o","object":"model"},{"id":"gpt-4o-mini","object":"model"}]}`))
+			}
 			return
 		}
 		var body map[string]any
@@ -270,9 +276,9 @@ func TestFlowChatConfiguresKeyThenUsesIt(t *testing.T) {
 	runtime := realRuntime(t, built)
 	_ = runtime
 
-	// Drive the chat REPL: switch to openai, set its key via /key, then send
-	// a message (default engine is deepseek — alphabetical first).
-	input := "/provider openai\n/key openai sk-interactive\nhello\nquit\n"
+	// Drive the chat REPL: configure openai key via /key, switch to openai,
+	// then send a message (default engine is deepseek — alphabetical first).
+	input := "/key openai sk-interactive\n/provider openai\nhello\nquit\n"
 	oldStdin := os.Stdin
 	r, w, _ := os.Pipe()
 	_, _ = w.WriteString(input)
