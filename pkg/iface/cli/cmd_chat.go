@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tltre/gogent/pkg/agentcore"
 	"github.com/tltre/gogent/pkg/component"
+	"github.com/tltre/gogent/pkg/contextmanager"
 	"github.com/tltre/gogent/pkg/provider"
 )
 
@@ -37,6 +38,15 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 	// v0.14.6: session-level provider/model selection.
 	mgr := providerManagerFrom(cli)
 	currentProvider, currentModel := initialSelection(mgr)
+
+	// v0.15.4: conversation session — ContextManager keeps cross-turn history.
+	// A session is created at chat start and passed via Input.SessionID so the
+	// ReactAgent persists each turn (user + assistant) and reloads history.
+	cm := contextManagerFrom(cli)
+	sessionID := ""
+	if cm != nil {
+		sessionID = cm.NewSession()
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Fprint(os.Stdout, cli.Prompt)
@@ -79,6 +89,7 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 			},
 			ProviderName: currentProvider,
 			ModelName:    currentModel,
+			SessionID:    sessionID,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stdout, "Error: %v\n%s", err, cli.Prompt)
@@ -89,6 +100,21 @@ func runChat(ctx context.Context, cli *DefaultCLI) error {
 	}
 
 	return scanner.Err()
+}
+
+// contextManagerFrom returns the ContextManager component from the registry,
+// or nil when none is registered.
+func contextManagerFrom(cli *DefaultCLI) *contextmanager.ContextManagerComponent {
+	reg := cli.Registry()
+	if reg == nil {
+		return nil
+	}
+	comp := reg.GetDefault(component.ComponentContextManager)
+	cm, ok := comp.(*contextmanager.ContextManagerComponent)
+	if !ok {
+		return nil
+	}
+	return cm
 }
 
 // providerManagerFrom returns the ProviderManager from the registry, or nil

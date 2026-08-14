@@ -46,15 +46,28 @@
 #     期望：Current model: deepseek-reasoner
 #   > 你好
 #     期望：使用 deepseek-reasoner 的真实回复
+#   > 我叫小明，请记住
+#     期望：模型记住上下文（v0.15.x 会话历史，ContextManager 持久化）
+#   > 我叫什么名字？
+#     期望：回答"小明"——证明跨轮次历史已注入（BuildInput 加载历史）
 #   > /provider openai
 #     期望：切回 openai，model 重置为默认
 #   > 你好
 #     期望：使用刚 /key 配置的 openai key（无需重启）
 #   > quit
 #
+# ReAct 工具调用验证（可选，需 app 声明 tools）：
+#   在 provider-verify.yaml 的 components 中加 tools 声明（daemon 注册），
+#   然后 chat 中问需要工具的问题（如计算/查询）：
+#   > 帮我计算 1234*5678
+#     期望：模型调用工具（若 daemon 有 calculator 等）→ 回填结果 → 最终回答
+#   （工具执行在 daemon 侧；观察 agent 日志确认 tool 调用与回填）
+#
 # 验证通过标准：
 #   1. /key 交互配置后消息立即使用新 key（无需重启/编辑文件）
 #   2. run 命令返回所选 provider/model 的真实回复
 #   3. chat 中 /provider /model 切换生效，消息使用所选引擎
-#   4. 无 key 的供应商在 /provider 列表中出现但调用报错（凭证缺失）
+#   4. 跨轮次对话：模型记住上下文（历史经 ContextManager 持久化并加载）
+#   5. ReAct 工具调用：模型声明工具 → 执行 → 结果回填 → 最终回答
+#   6. 无 key 的供应商在 /provider 列表中出现但调用报错（凭证缺失）
 # =============================================================================
