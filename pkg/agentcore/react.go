@@ -3,7 +3,13 @@ package agentcore
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/tltre/gogent/internal/otel"
 	"github.com/tltre/gogent/pkg/component"
 	"github.com/tltre/gogent/pkg/contextmanager"
 	"github.com/tltre/gogent/pkg/hook"
@@ -73,6 +79,33 @@ func (a *ReactAgent) Run(ctx context.Context, input Input) (Output, error) {
 	ctx = provider.WithProviderName(ctx, input.ProviderName)
 	ctx = provider.WithModel(ctx, input.ModelName)
 
+	// v0.15.x: observe the whole ReAct run; LLM calls and tool executions are
+	// recorded as child spans/events (ToolManager emits tool.exec).
+	tracer := otel.Tracer("gogent.agent")
+	ctx, span := tracer.Start(ctx, "agent.run",
+		trace.WithAttributes(
+			attribute.String("provider", provider.ProviderNameFrom(ctx)),
+			attribute.String("model", provider.ModelFrom(ctx)),
+			attribute.String("session", input.SessionID),
+		))
+	defer span.End()
+	start := time.Now()
+
+	output, err := a.runReAct(ctx, input)
+	span.SetAttributes(attribute.Int64("dur_ms", time.Since(start).Milliseconds()))
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return output, err
+	}
+	span.SetStatus(codes.Ok, "")
+	return output, nil
+}
+
+// runReAct is the core ReAct loop (moved out of Run so the agent.run span wraps
+// the whole iteration).
+func (a *ReactAgent) runReAct(ctx context.Context, input Input) (Output, error) {
+	tracer := otel.Tracer("gogent.agent")
+
 	// 1. Tool declarations (from the framework-managed tool service).
 	var toolDefs []provider.ToolDefinition
 	if svc := a.runtime.ToolService(); svc != nil {
@@ -113,12 +146,25 @@ func (a *ReactAgent) Run(ctx context.Context, input Input) (Output, error) {
 		}
 		iterations++
 
+		// v0.15.x: observe each LLM call within the ReAct loop.
 		a.triggerHook(ctx, hook.EventBeforeLLM)
+		llmStart := time.Now()
+		_, llmSpan := tracer.Start(ctx, "agent.llm.generate",
+			trace.WithAttributes(attribute.Int("msg_count", len(messages))))
 		resp, err := a.manager.Generate(ctx, messages)
-		a.triggerHook(ctx, hook.EventAfterLLM)
+		llmSpan.SetAttributes(
+			attribute.Int64("dur_ms", time.Since(llmStart).Milliseconds()),
+			attribute.Int("tool_calls", len(resp.ToolCalls)),
+		)
 		if err != nil {
+			llmSpan.SetStatus(codes.Error, err.Error())
+			llmSpan.End()
+			a.triggerHook(ctx, hook.EventAfterLLM)
 			return Output{}, err
 		}
+		llmSpan.SetStatus(codes.Ok, "")
+		llmSpan.End()
+		a.triggerHook(ctx, hook.EventAfterLLM)
 
 		if len(resp.ToolCalls) == 0 {
 			finalContent = resp.Content

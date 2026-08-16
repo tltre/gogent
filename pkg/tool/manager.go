@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/tltre/gogent/internal/grpctransport"
 	"github.com/tltre/gogent/internal/grpctransport/gogentv1"
+	internal_otel "github.com/tltre/gogent/internal/otel"
 	"github.com/tltre/gogent/pkg/hook"
 )
 
@@ -174,6 +179,11 @@ func (tm *ToolManager) ListServers() []string {
 
 // Execute sends a tool execution request to the daemon via gRPC bidirectional stream.
 // Returns an error if the daemon is not connected.
+//
+// v0.15.x: the full execution is observed under a "tool.exec" span. The
+// bidirectional exchange (auth → hooks → result) is recorded as span events in
+// executeRemote, so the app side keeps a complete audit of the tool call
+// without requiring the daemon to export traces itself (multi-app backends).
 func (tm *ToolManager) Execute(ctx context.Context, name string, params map[string]any) (Result, error) {
 	tm.mu.RLock()
 	client := tm.client
@@ -184,7 +194,25 @@ func (tm *ToolManager) Execute(ctx context.Context, name string, params map[stri
 		return Result{IsError: true, ErrorMsg: "daemon unavailable"}, fmt.Errorf("daemon unavailable")
 	}
 
-	return tm.executeRemote(ctx, client, name, params)
+	tracer := internal_otel.Tracer("gogent.tool")
+	ctx, span := tracer.Start(ctx, "tool.exec",
+		trace.WithAttributes(attribute.String("tool", name)))
+	defer span.End()
+
+	start := time.Now()
+	result, err := tm.executeRemote(ctx, client, name, params)
+
+	span.SetAttributes(
+		attribute.Bool("result.is_error", result.IsError),
+		attribute.String("result.error", result.ErrorMsg),
+		attribute.Int64("dur_ms", time.Since(start).Milliseconds()),
+	)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return result, err
+	}
+	span.SetStatus(codes.Ok, "")
+	return result, nil
 }
 
 // executeRemote opens a bidirectional ExecuteTool stream, sends the request,
@@ -223,13 +251,26 @@ func (tm *ToolManager) executeRemote(ctx context.Context, client gogentv1.ToolSe
 		}
 		switch e := evt.Event.(type) {
 		case *gogentv1.ToolExecutionEvent_Auth:
+			// v0.15.x: record the authorization stage of the exchange.
+			trace.SpanFromContext(ctx).AddEvent("tool.auth",
+				trace.WithAttributes(
+					attribute.Bool("passed", e.Auth.Passed),
+					attribute.String("reason", e.Auth.Reason),
+				))
 			if !e.Auth.Passed {
 				return Result{IsError: true, ErrorMsg: e.Auth.Reason}, nil
 			}
 
 		case *gogentv1.ToolExecutionEvent_Hook:
 			// App-side: handle hook invocation and reply with verdict
+			stage := e.Hook.Stage
 			verdict := tm.HandleHookInvocation(ctx, e.Hook)
+			trace.SpanFromContext(ctx).AddEvent("tool.hook",
+				trace.WithAttributes(
+					attribute.String("stage", stage),
+					attribute.Bool("approved", verdict.Approved),
+					attribute.String("reason", verdict.Reason),
+				))
 			if err := stream.Send(&gogentv1.ToolControl{
 				Msg: &gogentv1.ToolControl_Verdict{
 					Verdict: verdict,
@@ -240,6 +281,11 @@ func (tm *ToolManager) executeRemote(ctx context.Context, client gogentv1.ToolSe
 
 		case *gogentv1.ToolExecutionEvent_Result:
 			result = resultFromProto(e.Result)
+			trace.SpanFromContext(ctx).AddEvent("tool.result",
+				trace.WithAttributes(
+					attribute.Bool("is_error", result.IsError),
+					attribute.String("error_msg", result.ErrorMsg),
+				))
 		}
 	}
 

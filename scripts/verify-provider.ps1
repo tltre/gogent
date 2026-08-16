@@ -6,6 +6,16 @@
 # 前置：构建二进制
 #   go build -o gogent.exe ./cmd/gogent
 #
+# 步骤 0（可选）：网页观测——启动 Jaeger（OTLP collector + UI）
+#   docker run --rm -d --name jaeger \
+#     -e COLLECTOR_OTLP_ENABLED=true \
+#     -p 16686:16686 -p 4317:4317 \
+#     jaegertracing/all-in-one:latest
+#   → 网页观测：http://localhost:16686
+#   → provider-verify.yaml 已配置 observability.otel → localhost:4317
+#   → 观测内容：agent.run（总流程）→ agent.llm.generate（LLM 调用）
+#     → tool.exec（工具调用，含 auth/hook/result 事件与 daemon 返回耗时）
+#
 # 步骤 1：写示例配置
 #   已提供 config/provider-verify.yaml（见下）
 #

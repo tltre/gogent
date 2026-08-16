@@ -7,10 +7,24 @@ interface:
     banner: "Provider Verify Agent — use /provider and /model to switch"
     prompt: "> "
 
+# OpenTelemetry 观测（v0.15.x）：导出到 OTLP collector（Jaeger/Tempo）。
+# 本地观测：先启动 Jaeger（见 scripts/verify-provider.ps1 或 docs/agent.md），
+# 再启动本应用——Jaeger 网页 http://localhost:16686 查看完整 trace。
+observability:
+  otel:
+    enabled: true
+    endpoint: "localhost:4317"     # OTLP gRPC（Jaeger all-in-one 默认端口）
+    service_name: "verify-agent"
+    environment: "dev"
+
 # 工具声明（v0.12.2 声明式设计）：builtin 工具也必须显式声明才可用。
 # daemon 内置：calculator（计算）/ think（推理）/ todo（待办）。
 tools:
   - name: calculator
+    securityLevel: 3
+  - name: think
+    securityLevel: 0
+  - name: todo
     securityLevel: 0
   - name: think
     securityLevel: 0
