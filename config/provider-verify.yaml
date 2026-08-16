@@ -13,7 +13,8 @@ interface:
 observability:
   otel:
     enabled: true
-    endpoint: "localhost:4317"     # OTLP gRPC（Jaeger all-in-one 默认端口）
+    endpoint: "127.0.0.1:4317"   # OTLP gRPC（Jaeger 默认端口）。用 127.0.0.1 而非 localhost：
+                                 # Windows 上 grpc.NewClient("localhost:...") 的双栈解析可能挂起导致导出超时
     service_name: "verify-agent"
     environment: "dev"
 
@@ -22,10 +23,6 @@ observability:
 tools:
   - name: calculator
     securityLevel: 3
-  - name: think
-    securityLevel: 0
-  - name: todo
-    securityLevel: 0
   - name: think
     securityLevel: 0
   - name: todo
