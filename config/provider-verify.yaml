@@ -7,6 +7,16 @@ interface:
     banner: "Provider Verify Agent — use /provider and /model to switch"
     prompt: "> "
 
+# 工具声明（v0.12.2 声明式设计）：builtin 工具也必须显式声明才可用。
+# daemon 内置：calculator（计算）/ think（推理）/ todo（待办）。
+tools:
+  - name: calculator
+    securityLevel: 0
+  - name: think
+    securityLevel: 0
+  - name: todo
+    securityLevel: 0
+
 components:
   # native provider：默认全开 openai + deepseek（无 exclude）
   # （builder 注册为 ProviderManager 组件 "provider-manager"，自动成为默认 provider）
@@ -21,4 +31,3 @@ components:
     driver: "native"
     config:
       type: "react"
-

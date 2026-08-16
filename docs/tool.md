@@ -282,22 +282,47 @@ func (r *EnvResolver) Resolve(input string) string {
 ```yaml
 # app-a.yaml
 tools:
-  - name: github-mcp          # 声明 server 名
+  - name: github-mcp          # 声明 MCP server 名 → 展开子工具
     securityLevel: 1
+  - name: calculator          # 声明 builtin 工具名（同样需要声明！）
+    securityLevel: 0
 ```
+
+> ⚠️ **builtin 工具不会自动加载到 App**：daemon 持有的内置工具（calculator/think/todo 等）与 MCP server 一样，**必须由 App 显式声明才可用**。这是 v0.12.2 的声明式授权设计——`ManifestStore.IsAuthorized` 在执行时校验 App 是否声明了该工具，未声明即无权执行。App 只获得它声明的工具（最小权限）。
 
 ### 9.2 Manifest 展开
 
 ```
 App RegisterManifest("github-mcp")
-  → Daemon 查 ServerStore → 确认是 MCP Server
-  → 查 ToolRegistry.ListByServer("github-mcp")
-  → 展开为: github-mcp.pull, github-mcp.push, ...
+  → Daemon 查 ToolRegistry → 直接工具（builtin/子工具）直接接受
+  → 查 ServerStore → MCP Server 名 → 展开子工具
   → 逐个校验并返回 ManifestResponse
 
 App 侧 cache:
-  [{name:"github-mcp.pull"}, {name:"github-mcp.push"}, ...]
+  [{name:"calculator"}, {name:"github-mcp.pull"}, {name:"github-mcp.push"}, ...]
 ```
+
+**声明解析顺序**（daemon 侧 `RegisterManifest`，grpc.go）：
+
+```
+1. entry.Name 命中 ToolRegistry（builtin 或已注册子工具）→ 直接接受为 builtin
+2. entry.Name 命中 ServerStore（MCP server）→ 展开为 <server>.<tool> 子工具
+3. 都不命中 → 拒绝（tool not found）
+```
+
+> ⚠️ **builtin 名优先于 MCP server 名**：若某个 MCP server 名与 builtin 工具同名，声明该名时 daemon 会当作 builtin 接受（第 1 分支先命中）。因此应避免 MCP server 使用 builtin 名。
+
+### 9.2.1 命名冲突保护（v0.15.x）
+
+**builtin 工具名是保留名**，MCP server（process/http）注册时**不能覆盖**：
+
+| 注册路径 | 冲突行为 | 说明 |
+|---------|---------|------|
+| CLI/gRPC（`gogent tool register`） | 拒绝：`name "X" conflicts with builtin tool` | `ToolRegistry.Register` 重名拒绝 |
+| tools.yaml 加载 | 拒绝：`cannot override builtin tool "X" with driver "Y"` | `RegisterOrUpdate` 保护 SourceBuiltin |
+| ServerStore.Add | 拒绝：`server "X" already exists` | builtin 已注册进 ServerStore |
+
+**原因**：若允许同名覆盖，`calculator` 会从 builtin 静默变成 MCP server——ToolRegistry 与 ServerStore 状态不一致，工具语义混乱，授权/路由不确定。builtin 名空间保留，杜绝冲突产生。
 
 ### 9.3 ToolManager 扩展方法
 

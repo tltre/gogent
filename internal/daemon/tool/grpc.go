@@ -114,9 +114,14 @@ func (h *Handler) RegisterTool(ctx context.Context, req *gogentv1.RegisterToolRe
 		Env:         req.Env,
 	}
 	if err := h.registry.Register(def); err != nil {
+		msg := err.Error()
+		// v0.15.x: distinguish builtin-name collisions for clear feedback.
+		if h.registry.GetSource(req.Name) == SourceBuiltin {
+			msg = fmt.Sprintf("name %q conflicts with builtin tool", req.Name)
+		}
 		return &gogentv1.RegisterToolResponse{
 			Success:      false,
-			ErrorMessage: err.Error(),
+			ErrorMessage: msg,
 		}, nil
 	}
 	return &gogentv1.RegisterToolResponse{Success: true}, nil

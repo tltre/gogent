@@ -120,7 +120,14 @@ func (r *ToolRegistry) RegisterOrUpdate(def *ToolDefinition) error {
 	if err := r.validateLocked(def); err != nil {
 		return err
 	}
-	if _, exists := r.entries[def.Name]; exists {
+	if existing, exists := r.entries[def.Name]; exists {
+		// v0.15.x: protect builtin tools from being overridden by file/user
+		// entries. A name collision between a builtin tool and a process/http
+		// MCP server would silently change tool semantics (e.g. "calculator"
+		// becomes an MCP server while the ServerStore still reports builtin).
+		if existing.source == SourceBuiltin && def.Driver != string(DriverBuiltin) {
+			return fmt.Errorf("cannot override builtin tool %q with driver %q", def.Name, def.Driver)
+		}
 		// Update in place — preserve status and stats
 		r.entries[def.Name].def = def
 		r.entries[def.Name].source = SourceFile
