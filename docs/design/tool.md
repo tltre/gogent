@@ -1,9 +1,8 @@
 # 工具生态架构
 
-> 本文档描述 gogent 工具生态的整体架构，涵盖从配置管理到运行时调用的全链路。
-> 版本：v0.12.8
+> **文档状态**：本文档记录 Gogent 在 v0.14-v0.15 的架构演进与决策过程，包括方案对比、取舍理由与后续演进方向。代码与本文档如有出入，以代码为准。
 
----
+本文档描述 Gogent 工具生态的整体架构：从配置管理到运行时调用的全链路（ToolRegistry、MCP server、执行管线、凭证管理、App 侧集成）。
 
 ## 一、架构总览
 
@@ -43,8 +42,6 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
----
-
 ## 二、核心概念
 
 ### 2.1 MCP Server 粒度
@@ -77,8 +74,6 @@ tools:
 | **ServerStore** | MCP Server 元信息（command、env、status、mcp client） | `github-mcp: {command, status:ACTIVE, client}` |
 | **ToolRegistry** | 可调用的工具条目 | `calculator`、`github-mcp.pull`、`github-mcp.push` |
 | **ManifestStore** | App 注册的工具声明 | `{"my-agent": ["github-mcp"]}` |
-
----
 
 ## 三、初始化流程
 
@@ -117,8 +112,6 @@ Daemon.NewDaemon():
 | `LoadFromFile()` (process) | `{my-custom-mcp, command:...}` | (空——等 ListTools) |
 | `StartAllServers()` | status → ACTIVE | `my-custom-mcp.pull`, `my-custom-mcp.push` |
 
----
-
 ## 四、Runner 体系
 
 ### 4.1 Runner 接口
@@ -147,8 +140,6 @@ case "http":
     mcpCl, _ = client.NewStreamableHttpClient(endpoint)
 }
 ```
-
----
 
 ## 五、Run 执行管线
 
@@ -179,8 +170,6 @@ ExecuteTool("github-mcp.pull", {owner:"foo"})
   → mcpResultToResult → text content
 ```
 
----
-
 ## 六、生命周期管理
 
 ### 6.1 状态状态机
@@ -209,8 +198,6 @@ gogent tool restart my-custom-mcp
   → 重新 ListTools → 注册子工具
   → 状态恢复 ACTIVE
 ```
-
----
 
 ## 七、CLI 命令体系
 
@@ -242,8 +229,6 @@ gogent tool register
   → 一个失败不影响其他
 ```
 
----
-
 ## 八、凭证管理
 
 ### 8.1 credentials.yaml
@@ -273,8 +258,6 @@ func (r *EnvResolver) Resolve(input string) string {
 - gRPC `GetToolStatus` proto 不含 env 字段
 - Registry 存储原始 `${VAR}` 引用，解析发生在 Runner 执行时
 
----
-
 ## 九、App 侧集成
 
 ### 9.1 config.yaml
@@ -288,7 +271,7 @@ tools:
     securityLevel: 0
 ```
 
-> ⚠️ **builtin 工具不会自动加载到 App**：daemon 持有的内置工具（calculator/think/todo 等）与 MCP server 一样，**必须由 App 显式声明才可用**。这是 v0.12.2 的声明式授权设计——`ManifestStore.IsAuthorized` 在执行时校验 App 是否声明了该工具，未声明即无权执行。App 只获得它声明的工具（最小权限）。
+**builtin 工具不会自动加载到 App**：daemon 持有的内置工具（calculator/think/todo 等）与 MCP server 一样，**必须由 App 显式声明才可用**。这是 v0.12.2 的声明式授权设计——`ManifestStore.IsAuthorized` 在执行时校验 App 是否声明了该工具，未声明即无权执行。App 只获得它声明的工具（最小权限）。
 
 ### 9.2 Manifest 展开
 
@@ -302,7 +285,7 @@ App 侧 cache:
   [{name:"calculator"}, {name:"github-mcp.pull"}, {name:"github-mcp.push"}, ...]
 ```
 
-**声明解析顺序**（daemon 侧 `RegisterManifest`，grpc.go）：
+**声明解析顺序**（daemon 侧 `RegisterManifest`）：
 
 ```
 1. entry.Name 命中 ToolRegistry（builtin 或已注册子工具）→ 直接接受为 builtin
@@ -310,9 +293,9 @@ App 侧 cache:
 3. 都不命中 → 拒绝（tool not found）
 ```
 
-> ⚠️ **builtin 名优先于 MCP server 名**：若某个 MCP server 名与 builtin 工具同名，声明该名时 daemon 会当作 builtin 接受（第 1 分支先命中）。因此应避免 MCP server 使用 builtin 名。
+**builtin 名优先于 MCP server 名**：若某个 MCP server 名与 builtin 工具同名，声明该名时 daemon 会当作 builtin 接受（第 1 分支先命中）。因此应避免 MCP server 使用 builtin 名。
 
-### 9.2.1 命名冲突保护（v0.15.x）
+### 9.3 命名冲突保护
 
 **builtin 工具名是保留名**，MCP server（process/http）注册时**不能覆盖**：
 
@@ -324,15 +307,13 @@ App 侧 cache:
 
 **原因**：若允许同名覆盖，`calculator` 会从 builtin 静默变成 MCP server——ToolRegistry 与 ServerStore 状态不一致，工具语义混乱，授权/路由不确定。builtin 名空间保留，杜绝冲突产生。
 
-### 9.3 ToolManager 扩展方法
+### 9.4 ToolManager 扩展方法
 
 ```go
 tm.ListByServer("github-mcp")  → 属于该 server 的所有 tool
 tm.ListServers()               → 所有 server 名（含 builtin）
 tm.Execute("github-mcp.pull", {owner:"foo"})  → 调用
 ```
-
----
 
 ## 十、Hook 事件流
 
@@ -362,17 +343,17 @@ message HookVerdict {
 }
 ```
 
----
-
-## 十一、v0.13.x 规划
+## 十一、后续演进方向
 
 | 功能 | 说明 |
 |------|------|
-| Sandbox 体系 | Daemon 统一管理的沙箱系统（容器 / MicroVM），替代当前 App 侧方案 |
+| 沙箱体系 | Daemon 统一管理的沙箱系统（容器 / MicroVM），替代 App 侧方案（已在 v0.13 落地，见 sandbox.md） |
 | Shell + Filesystem 工具 | 依赖 sandbox 就绪后实现 |
-| 工具日志 | 统一 OTel 可观测性方案，推迟到 Sandbox 体系一并设计 |
+| 工具日志 | 统一 OTel 可观测性方案（已在 v0.15 落地，见 observability.md） |
 | 工具分组 | YAML `groups:` 语法糖，方便 App 快速引用一组工具 |
 
----
+## 参考
 
-> **文档状态**：v1.0 — 对应 v0.12.8 实现
+- 沙箱生态架构：[sandbox.md](./sandbox.md)
+- 可观测性设计：[observability.md](./observability.md)
+- 实现：`internal/daemon/tool/`（registry、runner、lifecycle、grpc、yaml）

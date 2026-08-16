@@ -8,7 +8,7 @@ interface:
     prompt: "> "
 
 # OpenTelemetry 观测（v0.15.x）：导出到 OTLP collector（Jaeger/Tempo）。
-# 本地观测：先启动 Jaeger（见 scripts/verify-provider.ps1 或 docs/agent.md），
+# 本地观测：先启动 Jaeger（见 scripts/verify-provider.ps1 或 docs/design/observability.md），
 # 再启动本应用——Jaeger 网页 http://localhost:16686 查看完整 trace。
 observability:
   otel:

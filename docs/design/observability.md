@@ -1,10 +1,8 @@
-# 可观测性设计文档
+# 可观测性设计
 
-> 本文档描述 gogent 框架的可观测性体系，涵盖 OpenTelemetry 插桩、span 结构、配置方式与网页观测。
-> 版本：v0.15.x
-> 关联：[`docs/agent.md`](./agent.md)（Agent Core）、[`docs/tool.md`](./tool.md)（工具生态）
+> **文档状态**：本文档记录 Gogent 在 v0.14-v0.15 的架构演进与决策过程，包括方案对比、取舍理由与后续演进方向。代码与本文档如有出入，以代码为准。
 
----
+本文档描述 Gogent 的可观测性体系：OpenTelemetry 插桩、span 结构、配置方式与网页观测。
 
 ## 一、架构总览
 
@@ -29,9 +27,7 @@
                         Jaeger 网页 (http://localhost:16686)
 ```
 
-**核心设计（v0.15.x 决策）**：工具调用观测完全由 **App 侧**承担——daemon 进程不导出 trace（方案 B）。原因：多 agent 守护架构下，多个 app 共享同一 daemon，每个 app 可能配置不同的 otel 后端；若 daemon 导出，其 span 只能发给单一 collector，导致部分 app 的 trace 断链。App 侧观测保证每个 app 的 trace 完整独立到自己的后端。
-
----
+**核心设计决策**：工具调用观测完全由 **App 侧**承担——daemon 进程不导出 trace。原因：多 agent 守护架构下，多个 app 共享同一 daemon，每个 app 可能配置不同的 otel 后端；若 daemon 导出，其 span 只能发给单一 collector，导致部分 app 的 trace 断链。App 侧观测保证每个 app 的 trace 完整独立到自己的后端。
 
 ## 二、插桩点与 span 结构
 
@@ -75,9 +71,7 @@ App → daemon 的 gRPC 调用通过 `otelgrpc` 自动传播 trace context：
 - 客户端：`grpctransport/conn.go` — `otelgrpc.NewClientHandler()`
 - 生成 `gogent.v1.ToolService/ExecuteTool` gRPC span（otelgrpc 自动），挂到 `tool.exec` 之下
 
-> daemon 侧**不导出** span（方案 B）：daemon 进程无 otel exporter，其内部执行细节不产生独立 trace；工具执行信息通过 gRPC 返回，由 App 侧 `tool.result` 事件记录。
-
----
+daemon 侧**不导出** span：daemon 进程无 otel exporter，其内部执行细节不产生独立 trace；工具执行信息通过 gRPC 返回，由 App 侧 `tool.result` 事件记录。
 
 ## 三、配置
 
@@ -108,9 +102,7 @@ observability:
 | 进程 | 配置来源 | 说明 |
 |------|---------|------|
 | **App** | yaml `observability.otel` | Builder 初始化（`InitFromConfig`） |
-| **Daemon** | 无（方案 B） | 不导出，无需配置 |
-
----
+| **Daemon** | 无 | 不导出，无需配置 |
 
 ## 四、网页观测（Jaeger）
 
@@ -123,7 +115,7 @@ docker run --rm -d --name jaeger \
   jaegertracing/all-in-one:latest
 ```
 
-> ⚠️ `COLLECTOR_OTLP_ENABLED=true` 必须设置，否则 Jaeger 不启用 OTLP 端口（4317）。
+`COLLECTOR_OTLP_ENABLED=true` 必须设置，否则 Jaeger 不启用 OTLP 端口（4317）。
 
 ### 4.2 观测步骤
 
@@ -138,7 +130,7 @@ docker run --rm -d --name jaeger \
 |--------|------|
 | `agent.run` | 存在（ReAct 总流程） |
 | `agent.llm.generate` | 多次（迭代轮数） |
-| `tool.exec` + `gogent.v1.ToolService/ExecuteTool` | 存在（**gRPC span 证明 daemon 侧实际执行**） |
+| `tool.exec` + `gogent.v1.ToolService/ExecuteTool` | 存在（gRPC span 证明 daemon 侧实际执行） |
 | `tool.auth` / `tool.hook` / `tool.result` 事件 | 完整（双向交流审计） |
 
 ### 4.3 本地调试（console）
@@ -152,9 +144,7 @@ observability:
 
 无需 Jaeger，直接看 stdout 的 span 树。
 
----
-
-## 五、多进程架构设计（方案 B）
+## 五、多进程导出方案（App 侧观测）
 
 ### 5.1 约束
 
@@ -169,21 +159,19 @@ daemon 是单一进程、单一 TracerProvider——无法为不同 app 的请�
 
 ### 5.2 决策
 
-**方案 B（采用）**：daemon 不导出，工具调用观测由 App 侧承担。
+**采用 App 侧观测**：daemon 不导出，工具执行信息返回 App，由 `tool.exec` 记录。
 
 | 方案 | 描述 | 结论 |
 |------|------|------|
 | A. 统一 collector | 所有进程指向同一 collector，trace 完整串联 | 可接受，但限制多 app 独立后端 |
-| **B. App 侧观测（采用）** | daemon 只做 gRPC 传播；工具执行信息返回 App，由 `tool.exec` 记录 | ✅ 每 app trace 完整独立，天然支持多后端 |
-| C. daemon 动态路由 exporter | daemon 按 app 切换 exporter | ❌ 复杂度爆炸，不现实 |
+| B. App 侧观测（采用） | daemon 只做 gRPC 传播；工具执行信息返回 App，由 `tool.exec` 记录 | 每 app trace 完整独立，天然支持多后端 |
+| C. daemon 动态路由 exporter | daemon 按 app 切换 exporter | 复杂度高，不现实 |
 
 ### 5.3 收益
 
 - **多 app 独立观测**：每个 app 的 trace 完整到自己的后端
 - **审计完整**：`tool.exec` 事件覆盖鉴权、钩子、结果全流程
 - **零 daemon 改动**：不引入 daemon 侧 exporter 生命周期管理
-
----
 
 ## 六、日志与 trace 关联
 
@@ -196,12 +184,10 @@ ctx = logger.WithTraceID(ctx)
 ```
 
 - **日志 traceId**：`logger.WithTraceID` 生成，随 context 传播，写入日志字段
-- **otel trace**：OTLP span 体系（本次插桩）
+- **otel trace**：OTLP span 体系
 - 两者**独立但并行**：日志用于排障定位，span 用于链路观测；均随 context 传播
 
-> ⚠️ 日志 traceId 与 otel traceID 目前**不关联**（两套 ID 生成）。后续可通过 `logger.WithTraceID` 从 otel span 提取 traceID 统一（见八、未来扩展）。
-
----
+日志 traceId 与 otel traceID 目前**不关联**（两套 ID 生成）。后续可通过 `logger.WithTraceID` 从 otel span 提取 traceID 统一。
 
 ## 七、已知问题与排障
 
@@ -209,25 +195,22 @@ ctx = logger.WithTraceID(ctx)
 |------|------|------|
 | `traces export: context deadline exceeded` | Windows 上 `grpc.NewClient("localhost:...")` 双栈解析挂起 | endpoint 用 `127.0.0.1:4317`（显式 IPv4） |
 | Jaeger 收不到 trace | 未设 `COLLECTOR_OTLP_ENABLED=true` | 启动容器时加该 env |
-| `Tool names must be unique`（400） | YAML `tools:` 声明重复 | 检查配置去重（见 tool.md 9.2.1 命名冲突保护） |
+| `Tool names must be unique`（400） | YAML `tools:` 声明重复 | 检查配置去重（见 tool.md 命名冲突保护） |
 | serviceName 显示为空（查询脚本） | Jaeger API 的 span.process 是 processID 引用 | 用 `processes[processID].serviceName` 查询 |
-
----
 
 ## 八、未来扩展
 
 | 项 | 说明 |
 |----|------|
 | daemon 侧插桩 | 如需 daemon 内部细粒度 span（runner 内部步骤），需统一 collector（方案 A）或 daemon 独立 exporter |
-| 审计日志 | 基于 `tool.exec` 事件可扩展：持久化工具调用审计（谁调用、鉴权结果、钩子判定、结果） |
+| 审计日志 | 基于 `tool.exec` 事件可扩展：持久化工具调用审计 |
 | 日志 trace 关联 | `logger.WithTraceID` 从 otel span 提取 traceID，统一两套 ID |
 | 指标（metrics） | 目前仅 tracing；可扩展 OTLP metrics（调用次数、延迟分布、错误率） |
-
----
 
 ## 九、参考
 
 - OTel Go SDK：`go.opentelemetry.io/otel`（tracing）、`otlptracegrpc`（导出）、`otelgrpc`（gRPC 传播）
-- 内部基础设施：[`internal/otel/`](../internal/otel/) — `InitFromConfig` / `Tracer` / `SetTracerProvider`
+- 内部基础设施：`internal/otel/` — `InitFromConfig` / `Tracer` / `SetTracerProvider`
 - 插桩实现：`pkg/agentcore/react.go`（agent.run/agent.llm.generate）、`pkg/tool/manager.go`（tool.exec + 事件）
-- 配置示例：[`config/provider-verify.yaml`](../config/provider-verify.yaml)
+- 配置示例：`config/provider-verify.yaml`（仓库根目录）
+- 关联设计：Agent Core（[agent.md](./agent.md)）、工具生态（[tool.md](./tool.md)）

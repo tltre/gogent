@@ -1,9 +1,8 @@
 # Daemon — App & Component 生命周期管理
 
-> 适用版本：v0.11.x+
-> 最后更新：2026-05-28
+> **文档状态**：本文档记录 Gogent 在 v0.14-v0.15 的架构演进与决策过程，包括方案对比、取舍理由与后续演进方向。代码与本文档如有出入，以代码为准。
 
----
+本文档描述 Daemon 后台进程的设计：agent application 及其组件的完整生命周期管理、进程隔离与崩溃恢复。
 
 ## 一、架构总览
 
@@ -35,7 +34,7 @@ Daemon 是一个后台进程，负责管理 agent application 及其组件的完
               Application 进程：Builder → Initialize → Start → mgmt HTTP → 阻塞等信号
 ```
 
----
+**进程模型选择**：agent 是独立的 OS 子进程而非 goroutine——完整进程隔离，daemon 崩溃不影响运行中的 agent，可通过 PID 探测恢复。
 
 ## 二、两套启动路径
 
@@ -64,8 +63,7 @@ Daemon 是一个后台进程，负责管理 agent application 及其组件的完
         → cleanupAppComponents → 不再重复打印
 ```
 
-**特征**：agent 跑在 gogent run 当前进程内，CLI 直接接管终端 stdin。
-daemon 知道该 app 但 PID=0（首次注册时），真实 PID 由 port file 回写。
+**特征**：agent 跑在 gogent run 当前进程内，CLI 直接接管终端 stdin。daemon 知道该 app 但 PID=0（首次注册时），真实 PID 由 port file 回写。
 
 ### 2.2 gogent serve（daemon-forked）
 
@@ -80,8 +78,7 @@ daemon 知道该 app 但 PID=0（首次注册时），真实 PID 由 port file �
            → 返回 { name, port, pid }
 ```
 
-**特征**：agent 是 daemon fork 的独立子进程，没有终端交互。
-前端 `gogent serve` 调用后即退出，agent 在后台运行。
+**特征**：agent 是 daemon fork 的独立子进程，没有终端交互。前端 `gogent serve` 调用后即退出，agent 在后台运行。
 
 ### 2.3 核心差异
 
@@ -90,11 +87,9 @@ daemon 知道该 app 但 PID=0（首次注册时），真实 PID 由 port file �
 | agent 位置 | gogent run 进程内 | daemon fork 子进程 |
 | PID 来源 | LoadApp 时 0，port file 回写 | LoadApp 时 real PID |
 | stdin | 终端键盘 | NUL（无终端） |
-| iface | forAgent(true)→有 CLI | forAgent(false)→SetInterface(nil) |
+| iface | foreground=true → 有 CLI | SetInterface(nil) |
 | Ctrl+C 影响 | daemon 隔离不动（detachDaemon） | 同左 |
 | 退出方式 | StopApp（正常）/ 健康检查（异常） | 同左 |
-
----
 
 ## 三、App 生命周期
 
@@ -125,16 +120,14 @@ daemon 知道该 app 但 PID=0（首次注册时），真实 PID 由 port file �
 func (d *Daemon) LoadApp(configPath string, needForkApplication bool) (*AppInfo, error)
 ```
 
-`needForkApplication` 控制是否 fork agent。
+`needForkApplication` 控制是否 fork agent：
 
 | 值 | 行为 | 调用者 |
 |----|------|--------|
 | true（默认） | fork 组件 + fork agent + 健康检查 | gogent serve / gogent restart |
 | false | fork 组件 + 分配端口，不 fork agent | gogent run |
 
-返回的 `AppInfo` 在 `needForkApplication=false` 时额外包含 `Env []string`，
-即组件 target 的环境变量（`GOGENT_PROVIDER_TARGET=localhost:xxxx`），
-调用方需 `os.Setenv` 后自己 Build agent。
+返回的 `AppInfo` 在 `needForkApplication=false` 时额外包含 `Env []string`，即组件 target 的环境变量（`GOGENT_PROVIDER_TARGET=localhost:xxxx`），调用方需 `os.Setenv` 后自己 Build agent。
 
 ### 3.3 StopApp（正常退出）
 
@@ -152,8 +145,7 @@ StopApp(name)
   └─ RemoveAppPortFile(name)
 ```
 
-**关键特性**：kill 失败不阻塞后续清理。PID=0（in-process agent）或进程已死时，
-`killProcess` 由 `pid <= 0` 守卫放行，直接进组件清理。
+**关键特性**：kill 失败不阻塞后续清理。PID=0（in-process agent）或进程已死时，`killProcess` 由 `pid <= 0` 守卫放行，直接进组件清理。
 
 ### 3.4 异常退出（crash / taskkill）
 
@@ -175,13 +167,7 @@ runHealthCheck（每 10s）
         tryHealthEndpoint(Port) ← best-effort ping
 ```
 
-**防止日志风暴**：首次检测到死亡后标记 `status=stopped`，后续轮次跳过。
-不再重复 `"[daemon] app ... stopped (pid ... no longer alive)"`。
-
-`gogent list` 仍显示 `stopped` 记录，供管理参考。
-可用 `gogent stop <name>` 彻底清除（Unregister）。
-
----
+**防止日志风暴**：首次检测到死亡后标记 `status=stopped`，后续轮次跳过。`gogent list` 仍显示 `stopped` 记录，供管理参考；可用 `gogent stop <name>` 彻底清除（Unregister）。
 
 ## 四、组件生命周期
 
@@ -213,7 +199,7 @@ forkComp(compName, compType) → (target string, error)
 
 ### 4.3 组件清理
 
-两种路径触发组件清理：
+两条路径触发组件清理：
 
 | 路径 | 触发条件 | 清理内容 |
 |------|---------|---------|
@@ -231,8 +217,6 @@ cleanupAppComponents(appName)
   └─ fallback: compStore.ListByApp(appName)（无 bidirectional map 时）
 ```
 
----
-
 ## 五、进程管理
 
 ### 5.1 killProcess — 平台差异
@@ -242,8 +226,7 @@ cleanupAppComponents(appName)
 | Windows | `taskkill /PID <pid> /F` | `pid <= 0` 时 return nil（不执行） |
 | Unix | `syscall.Kill(pid, SIGTERM)` | 同上 |
 
-`pid <= 0` 守卫是必要的——PID 0 在 Windows 上是 System Idle Process，
-在 Unix 上是当前进程组，kill 0 的行为不可预测。
+`pid <= 0` 守卫是必要的——PID 0 在 Windows 上是 System Idle Process，在 Unix 上是当前进程组，kill 0 的行为不可预测。
 
 ### 5.2 isProcessAlive
 
@@ -254,18 +237,11 @@ cleanupAppComponents(appName)
 
 ### 5.3 Port File 回写 PID
 
-in-process agent（gogent run）注册时 PID=0，但 `App.Run()` 中
-`mgmt.Listen` 会调用 `WriteAppPortFile` 写入真实 PID。
-
-`runHealthCheck` 通过 `ReadAppPortFile(name)` 读取，再调用
-`store.UpdatePID(name, realPid)` 更新 AppStore。
-
-`StopApp` 也通过 `ReadAppPortFile` 获取真实 PID 用于 kill。
+in-process agent（gogent run）注册时 PID=0，但 `App.Run()` 中 `mgmt.Listen` 会调用 `WriteAppPortFile` 写入真实 PID。`runHealthCheck` 通过 `ReadAppPortFile(name)` 读取并 `store.UpdatePID(name, realPid)`；`StopApp` 也通过它获取真实 PID 用于 kill。
 
 ### 5.4 detachDaemon — 信号隔离
 
-`startDaemonBackground` 中调用 `detachDaemon(cmd)`，将 daemon 子进程放入新进程组，
-防止 Ctrl+C 从父进程传播到 daemon：
+`startDaemonBackground` 中调用 `detachDaemon(cmd)`，将 daemon 子进程放入新进程组，防止 Ctrl+C 从父进程传播到 daemon：
 
 ```
 Ctrl+C → Console → gogent run（收到 → 退出）
@@ -277,9 +253,7 @@ Ctrl+C → Console → gogent run（收到 → 退出）
 | Windows | `CreationFlags \|= CREATE_NEW_PROCESS_GROUP` |
 | Unix | `Setpgid = true` |
 
----
-
-## 六、已知限制与后续工作
+## 六、已知限制与后续方向
 
 | 限制 | 说明 |
 |------|------|
@@ -287,4 +261,4 @@ Ctrl+C → Console → gogent run（收到 → 退出）
 | `gogent restart` 总是 fork agent | 不保留原 in-process 模式，重启用 daemon-forked |
 | `LoadApp` 端口分配后被抢 | 分配端口后调用方不及时 listen 导致冲突，未来由 daemon 先 listen 占住再返回 |
 | 组件清理 taskkill 128 | 进程已死时 taskkill 报 128，当前静默忽略 |
-| tool 组件名必须为工具-service | 与用户自定义名冲突，待 daemon 内部分离注册名和查找名 |
+| tool 组件名必须为 tool-service | 与用户自定义名冲突，待 daemon 内部分离注册名和查找名 |

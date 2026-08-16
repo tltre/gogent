@@ -1,9 +1,8 @@
 # 沙箱生态架构
 
-> 本文档描述 gogent 沙箱系统的整体架构、配置体系、与工具生态的联动关系，以及 CLI 管理命令。
-> 版本：v0.13.x
+> **文档状态**：本文档记录 Gogent 在 v0.14-v0.15 的架构演进与决策过程，包括方案对比、取舍理由与后续演进方向。代码与本文档如有出入，以代码为准。
 
----
+本文档描述 Gogent 沙箱系统的整体架构：配置体系、与工具生态的联动关系、Provider 体系与 CLI 管理命令。
 
 ## 一、架构总览
 
@@ -42,7 +41,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+**核心设计决策**：沙箱在 **Daemon 侧**执行——安全边界不由"囚犯"（App 进程）自己管理，App 侧沙箱方案被否决。
 
 ## 二、分层配置体系
 
@@ -64,7 +63,7 @@ sandbox-providers:
 sandbox-profiles:
   restricted-shell:
     provider: my-e2b                   # 引用已声明的 provider
-    template: "code-interpreter-v1"     # E2B template ID
+    template: "code-interpreter-v1"    # E2B template ID
     network: false                     # 无网络
     maxMemoryMB: 256
     allowCommands: [ls, cat, grep, echo, pwd]
@@ -117,8 +116,6 @@ tools:
 
 `tools.yaml` 只负责 MCP Server 管理，不包含任何沙箱配置。
 
----
-
 ## 三、沙箱路由三层 Fallback
 
 ExecuteTool 在决定是否使用沙箱时，按以下优先级查找：
@@ -131,7 +128,7 @@ ExecuteTool 在决定是否使用沙箱时，按以下优先级查找：
    └─ process → defaults.process.profile
 ```
 
----
+**设计选择**：LLM 选工具 = 选沙箱，不引入参数级复杂度；不同工具名映射不同沙箱，LLM 无需感知沙箱概念。
 
 ## 四、Provider 体系
 
@@ -161,7 +158,9 @@ type SnapshotProvider interface {      // MicroVM 快照
 }
 ```
 
-### 4.2 E2BProvider（当前唯一功能实现）
+**设计选择**：Provider 可选接口（Refreshable/SnapshotProvider）由后端自行实现，框架只要求核心 Create/Execute/Close。
+
+### 4.2 E2BProvider（当前功能实现）
 
 通过社区 Go SDK（`github.com/matiasinsaurralde/go-e2b`）对接 E2B-compatible REST API。
 
@@ -179,15 +178,13 @@ type E2BProvider struct {
 | 快照 | `sandbox.CreateSnapshot(ctx)` → `POST /sandboxes/{id}/snapshots` |
 | 销毁 | `sandbox.CloseWithContext(ctx)` → `DELETE /sandboxes/{id}` |
 
-### 4.3 BuiltinProvider（未来，v0.14.x）
+### 4.3 BuiltinProvider（本地隔离）
 
 | 平台 | 后端 | 依赖 |
 |------|------|------|
 | Linux | bubblewrap (bwrap) | `apt install bubblewrap` |
 | macOS | sandbox-exec (Seatbelt) | 内置 |
 | Windows | Docker fallback / stub | Docker Desktop |
-
----
 
 ## 五、生命周期管理
 
@@ -216,7 +213,7 @@ App crash / Daemon crash:
    → 下次 start 用快照恢复（如果有）
 ```
 
----
+**设计选择**：懒初始化（首次工具执行才创建沙箱）；crash 兜底依赖 E2B TTL 自动销毁，不留孤儿实例。
 
 ## 六、与 Tool 生态的联动
 
@@ -253,8 +250,6 @@ sandbox-default: workspace
 sandbox-tool-map: {"shell":"workspace","net-curl":"isolated-shell"}
 ```
 
----
-
 ## 七、敏感配置管理
 
 ### 7.1 统一凭证解析
@@ -277,8 +272,6 @@ resolver.Resolve("${E2B_API_KEY}")             // → credentials.yaml → os.Ge
 # ~/.gogent/credentials.yaml (0600 权限)
 E2B_API_KEY: "sk-..."
 ```
-
----
 
 ## 八、CLI 管理命令
 
@@ -326,13 +319,13 @@ gogent sandbox
 
 `edit` 命令保存退出后自动触发 `POST /api/v1/daemon/sandbox/reload`，重新解析 sandbox.yaml。
 
-### 8.3 不做的校验
+### 8.3 延迟校验
 
 - `provider remove` 不检查被哪些 profile 引用（错误在运行时暴露）
 - `profile remove` 不检查被哪些 App 引用
 - 如果配置文件有错误，daemon 拒绝 reload，保持旧配置
 
----
+**设计选择**：配置错误运行时暴露，CLI 不校验引用关系（延迟校验），保持 CLI 轻量。
 
 ## 九、测试体系
 
@@ -340,9 +333,7 @@ gogent sandbox
 |------|------|------|------|
 | 单元测试 | `tests/native/sandbox/` | 无（mock Provider） | Registry、Manager、配置加载 |
 | 集成测试 | `tests/native/sandbox/` | 无（mock gRPC Server） | ExecuteTool 路由、App 身份、断连清理 |
-| 端到端测试 | `tests/e2e/sandbox_test.go` | E2B API Key | 真实 E2B 沙箱执行 |
-
----
+| 端到端测试 | `tests/e2e/sandbox_test.go` | E2B API Key | 真实 E2B 沙箱执行（需外部服务） |
 
 ## 十、设计决策记录
 
@@ -356,3 +347,8 @@ gogent sandbox
 | 6 | Provider 可选接口 | Refreshable/SnapshotProvider 由后端自行实现 |
 | 7 | 延迟校验 | 配置错误运行时暴露，CLI 不校验引用关系 |
 | 8 | 统一凭证解析 | `internal/credentials/` 包，tool 和 sandbox 共享 |
+
+## 参考
+
+- 工具生态架构：[tool.md](./tool.md)
+- 实现：`internal/daemon/sandbox/`（manager、provider、yaml）
