@@ -1,48 +1,50 @@
 # Gogent — Go Agent Infrastructure
 
-**Gogent 是一个基于 Go 的 Agent 应用运行基础设施（harness）。** 它不替你写 agent 业务逻辑，而是提供一套可插拔的组件系统、多引擎 LLM Provider、ReAct Agent 循环、多应用守护进程管理、中心化工具注册表与沙箱隔离，让你用一份 YAML 声明式地组装、运行和运维 agent 应用。
+**English** | [中文](README.zh.md)
+
+Gogent is a Go-based **agent application harness**. It does not write your agent's business logic for you — instead it provides a pluggable component system, multi-engine LLM providers, a ReAct agent loop, multi-application daemon management, a centralized tool registry, and sandboxed tool execution, letting you assemble, run, and operate agent applications declaratively from a single YAML file.
 
 ```
 go get github.com/tltre/gogent
 ```
 
-## 特性
+## Features
 
-- **模块化组件架构**：9 个子系统以组件形式实现（channel / agentcore / provider / hook / eventbus / contextmanager / memory / sandbox / logger），YAML 声明式组装，每个组件可插拔、可替换、可多实例
-- **多引擎 LLM Provider**：内置 OpenAI、DeepSeek 原生引擎，OpenAI 兼容格式（Groq / Mistral / Ollama / vLLM 等 10+ 家）通过统一基类接入；运行时 `/provider` `/model` 自由切换，模型列表动态拉取、永不硬编码
-- **React Agent**：完整 ReAct 循环（推理 → 工具调用 → 观察 → 迭代），工具声明自动注入、结果回填、错误自纠正、迭代上限保护、上下文与记忆持久化
-- **多应用守护进程管理**：独立 OS 子进程隔离，daemon 统一分配端口、监控生命周期、崩溃自动检测与恢复、daemon 崩溃后代理进程不受影响
-- **中心化 Tool Registry**：工具统一由 daemon 注册与鉴权，App 通过 manifest 声明式使用（最小权限）；应用级 securityLevel + 全局规则双重管控
-- **MCP 工具生态**：process / http 双 MCP server，子工具自动展开（`server.tool` 命名），协议级 Ping 健康检查 + 连续失败自动重启
-- **沙箱隔离工具执行**：E2B（MicroVM）/ shell / filesystem 路由，三层 fallback（per-tool → app 默认 → daemon 默认），工具执行与凭证解析在 daemon 侧完成
-- **OpenTelemetry 可观测**：`agent.run` → `agent.llm.generate` → `tool.exec` 三级 span，工具执行全流程（鉴权/钩子/结果）事件化记录，OTLP gRPC 导出到 Jaeger/Tempo
-- **凭证隔离**：app-scoped `credentials.yaml`（`~/.gogent/apps/<name>/`），REPL 内 `/key` 交互式配置，密钥脱敏显示，设置即生效无需重启
+- **Modular component architecture** — 9 subsystems implemented as components (channel / agentcore / provider / hook / eventbus / contextmanager / memory / sandbox / logger), assembled declaratively via YAML; every component is pluggable, replaceable, and multi-instance capable
+- **Multi-engine LLM providers** — built-in OpenAI and DeepSeek engines, plus 10+ OpenAI-compatible vendors (Groq, Mistral, Ollama, vLLM, ...) through a shared base class; switch engines at runtime with `/provider` `/model`; model lists are fetched dynamically, never hardcoded
+- **ReAct agent** — full ReAct loop (reason → tool call → observe → iterate) with automatic tool declaration injection, result feedback, error self-correction, iteration caps, and context/memory persistence
+- **Multi-application daemon management** — independent OS subprocess isolation; the daemon allocates ports, monitors lifecycle, detects and recovers crashes; agents keep running even if the daemon dies
+- **Centralized tool registry** — tools are registered and authorized by the daemon; apps consume them declaratively via a manifest (least privilege); app-level `securityLevel` plus global rules
+- **MCP tool ecosystem** — process / http dual MCP servers, automatic sub-tool expansion (`server.tool` naming), protocol-level Ping health checks with auto-restart after consecutive failures
+- **Sandboxed tool execution** — E2B (MicroVM) / shell / filesystem routing with a three-level fallback (per-tool → app default → daemon default); tool execution and credential resolution happen daemon-side
+- **OpenTelemetry observability** — three-level spans `agent.run` → `agent.llm.generate` → `tool.exec`; the full tool-execution exchange (auth/hook/result) recorded as span events, exported via OTLP gRPC to Jaeger/Tempo
+- **Credential isolation** — app-scoped `credentials.yaml` (`~/.gogent/apps/<name>/`), interactive `/key` configuration in the REPL, masked key display, takes effect immediately without restart
 
-## 架构总览
+## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph CLI["用户 CLI"]
+    subgraph CLI["User CLI"]
         C1["gogent run / serve / stop / list<br/>status / doctor / logs / tool / sandbox"]
     end
 
-    subgraph DAEMON["Daemon 进程（localhost 守护进程）"]
+    subgraph DAEMON["Daemon process (localhost)"]
         direction TB
-        D1["AppStore / ComponentStore<br/>端口分配 · 健康检查 · 崩溃恢复"]
+        D1["AppStore / ComponentStore<br/>port allocation · health checks · crash recovery"]
         D2["ToolRegistry + MCP Runner<br/>builtin · process · http + Lifecycle"]
         D3["SandboxManager<br/>E2B provider + profiles"]
         D1 --- D2
         D1 --- D3
     end
 
-    subgraph APP["Agent App 进程（每应用独立 OS 子进程）"]
+    subgraph APP["Agent app process (one OS subprocess per app)"]
         direction TB
-        R["Registry（组件拓扑排序初始化）"]
-        AC["AgentCore（react）<br/>ReAct 循环"]
+        R["Registry (topological component init)"]
+        AC["AgentCore (react)<br/>ReAct loop"]
         PM["ProviderManager<br/>openai / deepseek / openai-compat 10+"]
-        TS["tool.Service<br/>（List/Execute 薄客户端）"]
-        CS["CredentialStore<br/>（app-scoped 凭证）"]
-        IF["Interface（CLI REPL）<br/>chat · /key · /provider · /model"]
+        TS["tool.Service<br/>(thin List/Execute client)"]
+        CS["CredentialStore<br/>(app-scoped)"]
+        IF["Interface (CLI REPL)<br/>chat · /key · /provider · /model"]
         R --> AC
         R --> PM
         R --> TS
@@ -53,50 +55,50 @@ flowchart TB
     end
 
     CLI -->|"HTTP API (:9090)"| DAEMON
-    DAEMON -->|"fork 子进程 / 监控"| APP
+    DAEMON -->|"fork subprocess / monitor"| APP
     APP -->|"gRPC ExecuteTool (tool.exec span)"| D2
     APP -->|"OTLP gRPC"| OTEL["Jaeger / Tempo"]
 ```
 
-## 子系统
+## Components
 
-| 子系统 | 职责 | 驱动 |
-|--------|------|------|
-| channel | 用户消息接入渠道 | native / process / http |
-| agentcore | Agent 执行逻辑与协调（react ReAct 循环） | native / process / http |
-| provider | LLM 提供者交互（ProviderManager 统一管理） | native（引擎注册表） / process / http |
-| hook | 钩子拦截与管理（before/after LLM、工具执行） | native / process / http |
-| eventbus | 跨子系统异步消息 | native / process / http |
-| contextmanager | 会话上下文（历史 + 记忆组装唯一输入源） | native / process / http |
-| memory | 长期记忆存储 | native / process / http |
-| sandbox | 沙箱执行（app 侧资源限制声明） | native / process / http |
-| logger | 结构化日志（zap） | native |
+| Component | Responsibility | Driver |
+|-----------|----------------|--------|
+| channel | User message ingestion | native / process / http |
+| agentcore | Agent execution & coordination (react ReAct loop) | native / process / http |
+| provider | LLM provider interaction (managed by ProviderManager) | native (engine registry) / process / http |
+| hook | Hook interception & management (before/after LLM, tool execution) | native / process / http |
+| eventbus | Async messaging across subsystems | native / process / http |
+| contextmanager | Session context (single input source assembling history + memory) | native / process / http |
+| memory | Long-term memory storage | native / process / http |
+| sandbox | Sandbox execution (app-side resource limit declarations) | native / process / http |
+| logger | Structured logging (zap) | native |
 
-> v0.12.2 起 `tool` 不再是 registry 组件——工具统一由 daemon 的 ToolRegistry 管理，App 侧通过 `tool.Service` 薄客户端访问。
+> Since v0.12.2, `tool` is no longer a registry component — tools are managed by the daemon's ToolRegistry, accessed via the thin `tool.Service` client on the app side.
 
-## 已实现功能
+## What's Implemented
 
-| 功能 | 能力说明 | 如何验证 |
-|------|---------|---------|
-| 组件系统 | 9 类组件、Registry 拓扑排序、`With*` 注入 > YAML > 默认实现三级优先级 | `gogent run config/example.yaml` 后 `gogent status` 查看组件状态表 |
-| 多引擎 Provider | `openai` / `deepseek` 原生引擎 + OpenAI 兼容基类；模型列表动态拉取（10 分钟缓存） | REPL 内 `/provider` 列出全部引擎与模型，`/provider deepseek` 即时切换 |
-| ReAct Agent | 工具声明注入 → 迭代（上限 10 轮）→ 结果回填 → 错误自纠正 → 工具交互存档至 Memory | 在 chat 中提问需要工具计算的问题，观察多轮迭代与最终回答 |
-| 多应用管理 | daemon fork 独立子进程、端口分配、崩溃检测、daemon 崩溃恢复（PID 探测） | `gogent serve <config>` + `gogent list`；kill 掉 agent 进程后观察 `gogent doctor` |
-| 工具注册表 | builtin（calculator/think/todo）+ MCP server 子工具展开；manifest 声明式授权；命名冲突保护 | `gogent tool list` 查看所有工具与状态；App 未声明的工具执行被拒绝 |
-| MCP 生态 | process（stdio）/ http（streamable）双驱动；MCP Ping 30s 探活；连续 3 次失败自动重启 | `gogent tool status <server>` 观察 ACTIVE/UNHEALTHY 状态迁移 |
-| 沙箱隔离 | E2B MicroVM + profiles + per-tool 路由；凭证经 `internal/credentials` 统一解析 | `gogent sandbox status`；配置 E2B key 后执行 shell 工具观察路由到沙箱 |
-| OTel 可观测 | 三级 span + 工具执行审计事件；OTLP gRPC 导出 | 启动 Jaeger（`docker run -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one`）后按 `service: example-agent` 搜索 trace |
-| 凭证管理 | app 作用域 `credentials.yaml`、`/key` 交互配置、密钥脱敏、CredentialStore 可替换（Vault/keyring） | REPL 内 `/key openai sk-...` 保存后直接使用，`/key` 查看脱敏状态 |
+| Feature | Capability | How to Verify |
+|---------|-----------|---------------|
+| Component system | 9 component types, Registry topological sort, `With*` injection > YAML > defaults priority chain | `gogent run config/example.yaml` then `gogent status` for the component table |
+| Multi-engine providers | `openai` / `deepseek` native engines + OpenAI-compatible base class; model lists fetched dynamically (10-min cache) | `/provider` in the REPL lists all engines and models; `/provider deepseek` switches instantly |
+| ReAct agent | Tool declaration injection → iteration (cap 10) → result feedback → error self-correction → tool interactions archived to Memory | Ask a question that needs a tool (e.g. arithmetic) in chat and watch the iterations |
+| Multi-app management | daemon forks independent subprocesses, allocates ports, detects crashes, recovers after daemon death (PID probing) | `gogent serve <config>` + `gogent list`; kill the agent process and watch `gogent doctor` |
+| Tool registry | builtin (calculator/think/todo) + MCP server sub-tool expansion; manifest-based declarative authorization; name-collision protection | `gogent tool list` shows all tools and status; undeclared tool execution is rejected |
+| MCP ecosystem | process (stdio) / http (streamable) dual drivers; MCP Ping every 30s; auto-restart after 3 consecutive failures | `gogent tool status <server>` to watch ACTIVE/UNHEALTHY transitions |
+| Sandbox isolation | E2B MicroVM + profiles + per-tool routing; credentials resolved via `internal/credentials` | `gogent sandbox status`; configure an E2B key and route a shell tool into the sandbox |
+| OTel observability | Three-level spans + tool-execution audit events; OTLP gRPC export | Start Jaeger (`docker run -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one`) and search traces by `service: example-agent` |
+| Credential management | app-scoped `credentials.yaml`, interactive `/key` config, masked keys, replaceable CredentialStore (Vault/keyring) | `/key openai sk-...` in the REPL then use it immediately; `/key` shows masked status |
 
-## 快速开始
+## Quick Start
 
-### 安装
+### Install
 
 ```bash
 go get github.com/tltre/gogent
 ```
 
-### 基本使用
+### Basic Usage
 
 ```go
 package main
@@ -116,7 +118,8 @@ func main() {
         panic(err)
     }
 
-    // 可选：以 BuildOption 注入自定义实现（优先级高于 YAML 配置）
+    // Optional: inject custom implementations via BuildOption
+    // (takes precedence over YAML configuration)
     application, err := builder.Build(
         app.WithProvider("openai", provider.NewOpenAI(provider.OpenAIConfig{})),
         app.WithAgentCore("agent-main", agentcore.NewReactAgent()),
@@ -132,9 +135,9 @@ func main() {
 }
 ```
 
-### 配置文件示例
+### Example Configuration
 
-完整的可运行示例见 [`config/example.yaml`](config/example.yaml)（OpenAI + DeepSeek 双引擎、react agent、OTel 观测）：
+A fully runnable example is at [`config/example.yaml`](config/example.yaml) (OpenAI + DeepSeek dual engines, react agent, OTel observability):
 
 ```yaml
 name: example-agent
@@ -149,7 +152,7 @@ interface:
 observability:
   otel:
     enabled: true
-    endpoint: "127.0.0.1:4317"   # OTLP gRPC（Jaeger/Tempo 默认端口）
+    endpoint: "127.0.0.1:4317"   # OTLP gRPC (Jaeger/Tempo default port)
     service_name: "example-agent"
     environment: "dev"
 
@@ -162,105 +165,109 @@ tools:
     securityLevel: 0
 
 components:
-  # react agentcore：完整 ReAct 循环（推理 → 工具调用 → 观察 → 迭代）
+  # react agentcore: full ReAct loop (reason → tool call → observe → iterate)
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
     config:
       type: "react"
 
-# provider 域（可选；缺省 = 全部内置引擎 openai/deepseek/...）
+# provider section (optional; default = all built-in engines openai/deepseek/...)
 provider: {}
-# 排除引擎或接入外部供应商：
+# Exclude engines or add external suppliers:
 #   exclude: ["deepseek"]
 #   servers:
 #     - name: "my-gateway"
-#       endpoint: "localhost:9092"   # 外部 ProviderService gRPC 地址
+#       endpoint: "localhost:9092"   # external ProviderService gRPC address
 ```
 
-## 快速体验
+## Try It
 
 ```bash
-# 构建框架 CLI
+# Build the framework CLI
 go build -o gogent.exe ./cmd/gogent
 
-# 启动 agent（自动拉起 daemon，进入交互式 chat REPL）
+# Start the agent (auto-starts the daemon, enters the interactive chat REPL)
 ./gogent.exe run config/example.yaml
 ```
 
-进入 REPL 后：
+Inside the REPL:
 
 ```
-> /key openai sk-你的OPENAIkey     # 交互式配置凭证（写入 app 作用域 credentials.yaml）
-> /key                             # 查看全部凭证状态（密钥脱敏）
-> /provider                        # 列出所有可用引擎与模型
-> /provider deepseek               # 运行时切换引擎
-> /model deepseek-reasoner         # 切换当前引擎的模型
-> 帮我计算 1234 * 5678             # 触发 ReAct 工具调用（calculator）
+> /key openai sk- YOUR_OPENAI_KEY  # configure credentials interactively (app-scoped credentials.yaml)
+> /key                              # list all credential status (keys masked)
+> /provider                         # list all available engines and models
+> /provider deepseek                # switch engines at runtime
+> /model deepseek-reasoner          # switch the model of the current engine
+> what is 1234 * 5678               # triggers a ReAct tool call (calculator)
 > quit
 ```
 
-## 与同类项目对比
+## Comparison with Similar Projects
 
 ### vs deepseek-harness
 
-| 维度 | Gogent | deepseek-harness |
-|------|--------|------------------|
-| 语言 | Go（单二进制、静态类型、天然并发） | TypeScript |
-| 定位 | 多应用 agent 运维基础设施（daemon 管理 + 工具生态 + 沙箱） | 单实例 agent 插件框架 |
-| 多应用 | ✅ daemon 进程隔离管理多个 agent，端口自动分配、崩溃恢复 | ❌ 单实例运行 |
-| 进程模型 | agent 独立 OS 子进程，daemon 崩溃不影响运行中 agent | 进程内运行 |
-| 工具生态 | MCP process/http 双驱动 + 中心化注册表 + 沙箱路由 | 插件机制 |
+| Dimension | Gogent | deepseek-harness |
+|-----------|--------|------------------|
+| Language | Go (single binary, static typing, native concurrency) | TypeScript |
+| Positioning | Multi-app agent operations infrastructure (daemon + tool ecosystem + sandbox) | Single-instance agent plugin framework |
+| Multi-app | ✅ daemon manages multiple agents with process isolation, auto port allocation, crash recovery | ❌ single instance |
+| Process model | Agents as independent OS subprocesses; daemon crash doesn't affect running agents | in-process |
+| Tool ecosystem | MCP process/http dual drivers + centralized registry + sandbox routing | plugin mechanism |
 
 ### vs LangGraph
 
-| 维度 | Gogent | LangGraph |
-|------|--------|-----------|
-| 定位 | Agent 应用运行基础设施（harness：组件、进程、工具、沙箱、观测） | Agent 开发库（状态图、编排原语） |
-| 关注层 | 应用装配与运维：YAML 声明组件、daemon 管理生命周期、中心化工具 | 图编排：节点、边、状态、checkpoint |
-| LLM 供应商 | 内置多引擎 + OpenAI 兼容 10+ 家，运行时切换 | 依赖第三方 provider 库 |
-| 工具执行 | daemon 侧统一鉴权/沙箱/审计，App 最小权限 | 进程内函数调用 |
-| 进程管理 | daemon + 子进程隔离 | 无 |
+| Dimension | Gogent | LangGraph |
+|-----------|--------|-----------|
+| Positioning | Agent application runtime infrastructure (harness: components, processes, tools, sandbox, observability) | Agent development library (state graphs, orchestration primitives) |
+| Layer | App assembly & operations: YAML components, daemon lifecycle, centralized tools | Graph orchestration: nodes, edges, state, checkpoints |
+| LLM providers | Built-in multi-engine + 10+ OpenAI-compatible, runtime switching | depends on third-party provider libraries |
+| Tool execution | daemon-side unified auth/sandbox/audit, least-privilege apps | in-process function calls |
+| Process management | daemon + subprocess isolation | none |
 
-Gogent 是"运行 agent 应用的操作系统"，LangGraph 是"编写 agent 逻辑的开发库"——两者解决不同层级的问题。
+Gogent is "the operating system for running agent applications"; LangGraph is "a library for writing agent logic" — they solve problems at different layers.
 
-## 项目结构
+## Project Structure
 
 ```
-cmd/gogent/              # 框架 CLI 入口（run/serve/stop/list/status/doctor/logs/tool/sandbox/daemon...）
-config/                  # 配置示例（example.yaml）
+cmd/gogent/              # framework CLI entry (run/serve/stop/list/status/doctor/logs/tool/sandbox/daemon...)
+config/                  # example config (example.yaml)
 internal/
-├── api/                 # HTTP API 路径与共享类型
-├── credentials/         # 统一凭证解析（credentials.yaml + ${VAR} + fsnotify 热加载）
-├── daemon/              # 守护进程：AppStore/ComponentStore/端口分配/健康检查/崩溃恢复
-│   ├── tool/            #   ToolRegistry + MCP Runner + Lifecycle（Ping 探活/自动重启）
-│   └── sandbox/         #   SandboxManager（E2B provider + profiles + per-tool 路由）
-├── grpctransport/       # gRPC 连接池 + ToolService proto（otelgrpc 传播）
-├── mgmt/                # agent 级管理 HTTP server（registry/health/logs/info/tools/sessions）
-└── otel/                # OpenTelemetry 初始化（InitFromConfig + Tracer）
+├── api/                 # HTTP API paths and shared types
+├── credentials/         # unified credential resolution (credentials.yaml + ${VAR} + fsnotify hot-reload)
+├── daemon/              # daemon: AppStore/ComponentStore/port allocation/health checks/crash recovery
+│   ├── tool/            #   ToolRegistry + MCP Runner + Lifecycle (Ping probe/auto-restart)
+│   └── sandbox/         #   SandboxManager (E2B provider + profiles + per-tool routing)
+├── grpctransport/       # gRPC connection pool + ToolService proto (otelgrpc propagation)
+├── mgmt/                # agent-level management HTTP server (registry/health/logs/info/tools/sessions)
+└── otel/                # OpenTelemetry initialization (InitFromConfig + Tracer)
 pkg/
-├── component/           # Component 接口 + Registry + 拓扑排序 + BasicComponent
-├── app/                 # Builder（NewBuilder/Build/With* BuildOption）+ Config + App 生命周期
-├── agentcore/           # IAgentCore + AgentRuntime 组件包装 + ReactAgent（ReAct 循环）
+├── component/           # Component interface + Registry + topological sort + BasicComponent
+├── app/                 # Builder (NewBuilder/Build/With* BuildOption) + Config + App lifecycle
+├── agentcore/           # IAgentCore + AgentRuntime component wrapper + ReactAgent (ReAct loop)
 ├── channel/             # IChannel + ChannelManager
-├── contextmanager/      # IContextManager（会话历史 + BuildInput 唯一输入源）
+├── contextmanager/      # IContextManager (session history + BuildInput single input source)
 ├── eventbus/            # IEventBus + DefaultEventBus
 ├── hook/                # IHook + HookManager
-├── logger/              # Logger 接口 + DefaultLogger（zap）
+├── logger/              # Logger interface + DefaultLogger (zap)
 ├── memory/              # IMemory + DefaultMemory
-├── provider/            # IProvider + ProviderManager + 引擎注册表 + OpenAI/DeepSeek 引擎 + CredentialStore
-├── sandbox/             # ISandbox + DefaultSandbox（app 侧资源限制声明）
-├── iface/               # Interface 层（CLI REPL：chat/run/version + /key /provider /model）
-└── tool/                # ToolManager（daemon 薄客户端）+ tool.Service 接口
-tests/                   # native（单元）/ cli（CLI 测试）/ e2e（端到端，需外部服务）/ integration
-docs/                    # 使用者指南（quickstart/configuration/providers/agents）+ design/ 设计文档
+├── provider/            # IProvider + ProviderManager + engine registry + OpenAI/DeepSeek engines + CredentialStore
+├── sandbox/             # ISandbox + DefaultSandbox (app-side resource limit declarations)
+├── iface/               # Interface layer (CLI REPL: chat/run/version + /key /provider /model)
+└── tool/                # ToolManager (thin daemon client) + tool.Service interface
+tests/                   # native (unit) / cli / e2e (needs external services) / integration
+docs/
+├── en/                  # English user guides (quickstart/configuration/providers/agents)
+├── quickstart.md etc.   # Chinese user guides
+└── design/              # Architecture Decision Records (Chinese)
 ```
 
-## 文档
+## Documentation
 
-- 使用者指南：[快速开始](docs/quickstart.md) · [配置参考](docs/configuration.md) · [供应商接入](docs/providers.md) · [Agent 类型](docs/agents.md)
-- 设计文档（架构决策记录）：[docs/design/](docs/design/)
+- English user guides: [Quickstart](docs/en/quickstart.md) · [Configuration](docs/en/configuration.md) · [Providers](docs/en/providers.md) · [Agents](docs/en/agents.md)
+- 中文使用者指南：[快速开始](docs/quickstart.md) · [配置参考](docs/configuration.md) · [供应商接入](docs/providers.md) · [Agent 类型](docs/agents.md)
+- Architecture Decision Records (Chinese): [docs/design/](docs/design/)
 
-## 许可证
+## License
 
 MIT
