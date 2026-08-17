@@ -4,11 +4,11 @@
 
 - **Module**: `github.com/tltre/gogent`
 - **Go**: 1.25.5
-- **Version**: v0.6.0-dev
+- **Version**: v0.15.0
 - **Entrypoint**: `cmd/gogent/main.go` — cobra-based CLI (`gogent run/status/doctor/...`)
 - **Binary**: `gogent`
 - **Deps**: `gopkg.in/yaml.v3` (direct), `github.com/mark3labs/mcp-go` (indirect), `go.uber.org/zap` (indirect), `github.com/spf13/cobra` (direct)
-- **CI / lint / Makefile**: none
+- **CI**: GitHub Actions (`.github/workflows/ci.yml`) — go build + go vet + go test
 - **Test helper**: `cmd/daemon/` — stdio daemon binary for end-to-end smoke testing
 
 ## Development Commands
