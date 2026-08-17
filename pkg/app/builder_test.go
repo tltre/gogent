@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/tltre/gogent/pkg/component"
@@ -38,22 +39,15 @@ func registerTestEngine(t *testing.T, name string) {
 	t.Cleanup(func() { provider.UnregisterEngine(name) })
 }
 
-func TestBuildNativeProvidersExclude(t *testing.T) {
+func TestBuildProviderExclude(t *testing.T) {
 	registerTestEngine(t, "test-engine-a")
 	registerTestEngine(t, "test-engine-b")
 	registerTestEngine(t, "test-engine-c")
 
 	cfg := &Config{
 		Name: "test-app",
-		Components: []ComponentConfig{
-			{
-				Name:   "provider-main",
-				Type:   "provider",
-				Driver: "native",
-				Config: map[string]any{
-					"exclude": []any{"test-engine-b"},
-				},
-			},
+		Provider: ProviderSection{
+			Exclude: []string{"test-engine-b"},
 		},
 	}
 
@@ -97,8 +91,11 @@ func TestBuildNativeProvidersExclude(t *testing.T) {
 	}
 }
 
-func TestBuildNoNativeProviderNoManager(t *testing.T) {
-	// Without any provider component, no ProviderManager is registered.
+func TestBuildNoProviderConfigRegistersAllEngines(t *testing.T) {
+	// v0.15.x: built-in engines are always registered. Without a provider:
+	// section, the ProviderManager still exists and carries every engine.
+	registerTestEngine(t, "default-engine")
+
 	cfg := &Config{Name: "test-app"}
 	b := NewBuilderFromConfig(cfg)
 	app, err := b.Build()
@@ -108,8 +105,113 @@ func TestBuildNoNativeProviderNoManager(t *testing.T) {
 	if app == nil {
 		t.Fatal("Build() = nil app")
 	}
-	if comp := b.registry.GetDefault(component.ComponentProvider); comp != nil {
-		t.Fatalf("GetDefault(ComponentProvider) = %v, want nil", comp)
+	comp := b.registry.GetDefault(component.ComponentProvider)
+	if comp == nil {
+		t.Fatal("GetDefault(ComponentProvider) = nil, want ProviderManager (built-ins always registered)")
+	}
+	mgr, ok := comp.(*provider.ProviderManager)
+	if !ok {
+		t.Fatalf("GetDefault() type = %T, want *provider.ProviderManager", comp)
+	}
+	names := map[string]bool{}
+	for _, info := range mgr.List() {
+		names[info.Name] = true
+	}
+	if !names["default-engine"] || !names["openai"] {
+		t.Fatalf("List() = %v, want built-in + registered engines", names)
+	}
+}
+
+func TestBuildComponentProviderRejected(t *testing.T) {
+	// v0.15.x: provider type no longer lives in components[] — the top-level
+	// provider: section is the only configuration surface. Old configs must
+	// fail with a migration hint instead of silently registering nothing.
+	cfg := &Config{
+		Name: "test-app",
+		Components: []ComponentConfig{
+			{Name: "provider-main", Type: "provider", Driver: "native"},
+		},
+	}
+	b := NewBuilderFromConfig(cfg)
+	_, err := b.Build()
+	if err == nil {
+		t.Fatal("Build() = nil error, want rejection of components[] provider")
+	}
+	if !strings.Contains(err.Error(), "provider:") {
+		t.Errorf("error = %v, want migration hint mentioning top-level provider section", err)
+	}
+}
+
+func TestBuildProviderServerReservedName(t *testing.T) {
+	// Built-in engine names are reserved: a server named "openai" must be
+	// rejected so /provider openai can never silently route to a remote.
+	cfg := &Config{
+		Name: "test-app",
+		Provider: ProviderSection{
+			Servers: []ProviderServerConfig{
+				{Name: "openai", Endpoint: "localhost:9092"},
+			},
+		},
+	}
+	b := NewBuilderFromConfig(cfg)
+	_, err := b.Build()
+	if err == nil {
+		t.Fatal("Build() = nil error, want reserved-name rejection")
+	}
+	if !strings.Contains(err.Error(), "conflicts with builtin engine") {
+		t.Errorf("error = %v, want conflicts-with-builtin message", err)
+	}
+}
+
+func TestBuildProviderServerRequiresEndpoint(t *testing.T) {
+	cfg := &Config{
+		Name: "test-app",
+		Provider: ProviderSection{
+			Servers: []ProviderServerConfig{
+				{Name: "my-gateway"},
+			},
+		},
+	}
+	b := NewBuilderFromConfig(cfg)
+	_, err := b.Build()
+	if err == nil {
+		t.Fatal("Build() = nil error, want missing-endpoint rejection")
+	}
+	if !strings.Contains(err.Error(), "endpoint is required") {
+		t.Errorf("error = %v, want endpoint-is-required message", err)
+	}
+}
+
+func TestBuildProviderServerRegistered(t *testing.T) {
+	// A valid external server lands in the ProviderManager under its name.
+	cfg := &Config{
+		Name: "test-app",
+		Provider: ProviderSection{
+			Servers: []ProviderServerConfig{
+				{Name: "my-gateway", Endpoint: "localhost:9092"},
+			},
+		},
+	}
+	b := NewBuilderFromConfig(cfg)
+	if _, err := b.Build(); err != nil {
+		t.Fatalf("Build() = %v", err)
+	}
+	mgr := b.registry.GetDefault(component.ComponentProvider).(*provider.ProviderManager)
+	if mgr.Get("my-gateway") == nil {
+		t.Fatal("ProviderManager.Get(my-gateway) = nil, want registered server")
+	}
+}
+
+func TestBuildDefaultsProviderIgnored(t *testing.T) {
+	// defaults.provider is managed by the ProviderManager; the entry is
+	// skipped (with a warning) instead of failing Build.
+	cfg := &Config{
+		Name:     "test-app",
+		Defaults: map[string]string{"provider": "provider-main"},
+	}
+	b := NewBuilderFromConfig(cfg)
+	if _, err := b.Build(); err != nil {
+		t.Fatalf("Build() = %v, want defaults.provider ignored", err)
 	}
 }
 
@@ -127,14 +229,8 @@ func TestBuildInjectsCredentialStore(t *testing.T) {
 	registerTestEngine(t, "cred-test-engine")
 
 	cfg := &Config{
-		Name: "cred-app",
-		Components: []ComponentConfig{
-			{
-				Name:   "provider-main",
-				Type:   "provider",
-				Driver: "native",
-			},
-		},
+		Name:     "cred-app",
+		Provider: ProviderSection{},
 	}
 
 	// Register a store-aware mock engine by replacing the factory is not

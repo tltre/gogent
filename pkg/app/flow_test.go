@@ -106,9 +106,6 @@ func TestFlowDefaultOpenRegistration(t *testing.T) {
 	app, _ := buildFlowApp(t, `
 name: flow-open
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -137,12 +134,9 @@ func TestFlowRunRoutesToSelectedProvider(t *testing.T) {
 
 	app, runtime := buildFlowApp(t, `
 name: flow-route
-components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]   # keep only mock engines
+provider:
+  exclude: ["openai", "deepseek"]
+components:   # keep only mock engines
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -173,12 +167,9 @@ func TestFlowRunDefaultProvider(t *testing.T) {
 
 	_, runtime := buildFlowApp(t, `
 name: flow-default
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -214,12 +205,9 @@ func TestFlowCredentialStoreReachesEngine(t *testing.T) {
 
 	cfg, err := ParseConfig([]byte(`
 name: flow-cred
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -256,12 +244,9 @@ func TestFlowCLIRunCommand(t *testing.T) {
 
 	app, _ := buildFlowApp(t, `
 name: flow-cli
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -302,12 +287,9 @@ func TestFlowChatREPLSwitchesProvider(t *testing.T) {
 
 	app, _ := buildFlowApp(t, `
 name: flow-chat
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -355,12 +337,9 @@ func TestFlowToolServiceInjected(t *testing.T) {
 
 	app, runtime := buildFlowApp(t, `
 name: flow-tools
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"

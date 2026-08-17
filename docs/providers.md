@@ -17,20 +17,30 @@ Gogent 内置多引擎 LLM Provider，通过统一的 `IProvider` 接口提供 O
 
 ### 1. YAML 声明（推荐）
 
-native provider 组件默认启用**全部**内置引擎，用 `exclude` 黑名单排除不需要的：
+内置引擎**始终注册**（无需声明），用顶级 `provider:` 域的 `exclude` 黑名单排除不需要的：
 
 ```yaml
-components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: []            # 留空 = 全部启用；例如 exclude: ["deepseek"]
+provider:
+  exclude: []            # 留空 = 全部启用；例如 exclude: ["deepseek"]
 ```
 
-声明后 ProviderManager 注册为默认 provider，REPL 中即可 `/provider` 查看与切换。
+`provider` 域缺省 = 全部内置引擎可用。ProviderManager 自动成为默认 provider，REPL 中即可 `/provider` 查看与切换。
 
-### 2. 代码注入（App 开发者）
+### 2. 外部供应商（gRPC endpoint 直连）
+
+外部已运行 `gogent.v1.ProviderService` 的服务，通过 `servers` 注册：
+
+```yaml
+provider:
+  servers:
+    - name: "my-gateway"          # 注册名（/provider 中显示）
+      endpoint: "localhost:9092"  # 外部 ProviderService gRPC 地址
+```
+
+- App 通过 gRPC 直连 endpoint，**不需要 daemon 介入**
+- `servers[].name` **不能与内置引擎名冲突**——openai/deepseek 是保留名，避免 `/provider openai` 静默路由到远端而非原生引擎（构建时报清晰错误）
+
+### 3. 代码注入（App 开发者）
 
 ```go
 builder, _ := app.NewBuilder("config.yaml")
@@ -44,7 +54,7 @@ application, err := builder.Build(
 )
 ```
 
-### 3. 接入新的 OpenAI 兼容厂商
+### 4. 接入新的 OpenAI 兼容厂商
 
 用 `NewOpenAICompat(baseURL)` 基类创建一个薄引擎（注册进引擎注册表）：
 

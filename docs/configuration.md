@@ -12,6 +12,11 @@ interface:               # 用户交互界面
   cli:
     banner: "..."        # 启动时打印的横幅
     prompt: "> "         # REPL 提示符
+provider:                # LLM 供应商（可选，见"provider 域"节）
+  exclude: ["deepseek"]  # 排除内置引擎
+  servers:               # 外部供应商（gRPC endpoint 直连）
+    - name: my-gateway
+      endpoint: "localhost:9092"
 observability:           # OpenTelemetry 观测（可选）
   otel: { ... }
 tools:                   # 工具声明（可选，见"工具声明"节）
@@ -22,14 +27,33 @@ sandboxes:               # 沙箱实例声明（可选，见"沙箱"节）
     profile: restricted-shell
 default:                 # App 级默认沙箱（可选）
   sandbox: workspace
-components:              # 组件列表
-  - name: provider-main
-    type: provider
+components:              # 组件列表（不含 provider 类型，见下）
+  - name: agent-main
+    type: agentcore
     driver: native
 defaults:                # 各组件类型的默认实例名
-  provider: provider-main
   agentcore: agent-main
 ```
+
+## provider 域（LLM 供应商）
+
+v0.15.x 起 provider 不再出现在 `components[]` 中，由顶级 `provider:` 域统一配置。**内置引擎始终注册**（缺省 = 全部可用），`exclude` 排除，`servers` 追加外部供应商：
+
+```yaml
+provider:
+  exclude: ["deepseek"]        # 可选：排除内置引擎（openai、deepseek、OpenAI 兼容引擎随版本扩展）
+  servers:                     # 可选：外部供应商列表
+    - name: "my-gateway"       # 注册名（/provider 中显示；不能与内置引擎名冲突）
+      endpoint: "localhost:9092"   # 外部已运行的 ProviderService gRPC 地址
+```
+
+| 字段 | 说明 |
+|------|------|
+| `exclude` | 黑名单：排除不需要的内置引擎；留空 = 全部启用 |
+| `servers[].name` | 外部供应商注册名。**内置引擎名为保留名**（openai/deepseek 不能用作 server 名，避免 `/provider openai` 静默路由到远端） |
+| `servers[].endpoint` | 外部 ProviderService 的 gRPC target（`host:port`），App 直连，无需 daemon 介入 |
+
+> provider 类型的 `defaults` 条目已被废弃——ProviderManager 是唯一的 provider 组件且自动成为默认。配置中残留 `defaults.provider` 会被忽略（stderr 提示），不再报错。
 
 ## components（组件）
 
@@ -37,24 +61,13 @@ defaults:                # 各组件类型的默认实例名
 
 ```yaml
 - name: "组件实例名"          # 唯一；defaults 中引用
-  type: "组件类型"            # channel/agentcore/provider/hook/eventbus/contextmanager/memory/sandbox/logger
+  type: "组件类型"            # channel/agentcore/hook/eventbus/contextmanager/memory/sandbox/logger
   driver: "native"           # native（进程内）| process（daemon 子进程）| http（远程 gRPC）
   config: { ... }            # 类型相关配置
   dependencies: { ... }      # 可选，声明依赖的具名组件
 ```
 
-### provider
-
-```yaml
-- name: "provider-main"
-  type: "provider"
-  driver: "native"           # native：注册为 ProviderManager，成为默认 provider
-  config:
-    exclude: ["groq"]        # 可选黑名单；留空 = 启用全部内置引擎
-                             # （openai、deepseek；OpenAI 兼容引擎随版本扩展）
-```
-
-> `driver: process` / `http` 用于连接远程 provider 服务（经 daemon fork），需要 `config.endpoint` 或环境变量 `GOGENT_PROVIDER_TARGET` 指定目标地址。
+> `type: provider` 不再属于 components[]——请在顶级 `provider:` 域配置（见上节）。
 
 ### agentcore
 
@@ -82,7 +95,6 @@ defaults:                # 各组件类型的默认实例名
 defaults:
   eventbus: eventbus-main
   logger: logger-main
-  provider: provider-main
   contextmanager: context-main
   memory: memory-main
   sandbox: sandbox-main
@@ -90,6 +102,8 @@ defaults:
 ```
 
 Registry 按类型取默认实例时使用。**未声明的类型**（如 logger/eventbus/memory/sandbox/contextmanager）由框架提供开箱即用的默认实现。
+
+> **provider 不需要 defaults**：ProviderManager 是唯一的 provider 组件，注册时自动成为默认。残留的 `defaults.provider` 条目会被忽略并提示。
 
 ## tools（工具声明）
 
@@ -167,8 +181,8 @@ interface:
 
 | driver | 含义 | 适用场景 |
 |--------|------|---------|
-| native | 进程内实现 | 默认推荐：ProviderManager 引擎、react agent、logger 等 |
+| native | 进程内实现 | 默认推荐：react agent、logger 等 |
 | process | daemon fork 的独立子进程（gRPC 通信） | 组件需进程隔离/独立故障域 |
 | http | 连接远程 gRPC 服务（`endpoint` 指定） | 连接已部署的远程组件 |
 
-daemon 管理的组件类型（provider/memory/contextmanager/agentcore）可跨应用共享：先 fork 的实例被后续应用复用，最后一个应用停止时回收。
+daemon 管理的组件类型（memory/contextmanager/agentcore）可跨应用共享：先 fork 的实例被后续应用复用，最后一个应用停止时回收。外部 provider 供应商（`provider.servers`）为 gRPC endpoint 直连，不经过 daemon fork。

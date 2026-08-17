@@ -19,12 +19,9 @@ func TestFlowMultiTurnHistory(t *testing.T) {
 
 	app, runtime := buildFlowApp(t, `
 name: flow-session
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
@@ -76,12 +73,9 @@ func TestFlowNoSessionNoPersistence(t *testing.T) {
 
 	app, runtime := buildFlowApp(t, `
 name: flow-nosession
+provider:
+  exclude: ["openai", "deepseek"]
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai", "deepseek"]
   - name: "agent-main"
     type: "agentcore"
     driver: "native"

@@ -28,16 +28,18 @@ tools:
   - name: todo
     securityLevel: 0
 
-components:
-  # native provider：默认注册全部内置引擎（openai / deepseek / ...），
-  # 用 exclude 排除不需要的引擎。
-  # builder 注册为 ProviderManager 组件 "provider-manager"，自动成为默认 provider。
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    # config:
-    #   exclude: ["deepseek"]
+# provider 域（v0.15.x，可选；缺省 = 全部内置引擎）：
+#   · exclude — 排除不需要的内置引擎（黑名单），例如 ["deepseek"]
+#   · servers — 外部供应商（gRPC endpoint 直连，需暴露 gogent.v1.ProviderService）
+#               servers[].name 不能与内置引擎名冲突（openai/deepseek 为保留名）
+# 示例：provider:
+#         exclude: ["deepseek"]
+#         servers:
+#           - name: "my-gateway"
+#             endpoint: "localhost:9092"
+provider: {}
 
+components:
   # react agentcore：完整 ReAct 循环（推理 → 工具调用 → 观察 → 迭代）。
   # 注册为 AgentRuntime，自动成为默认 agentcore。
   - name: "agent-main"

@@ -80,6 +80,14 @@ func (b *Builder) Registry() *component.Registry {
 }
 
 func (b *Builder) Build(opts ...BuildOption) (*App, error) {
+	// v0.15.x: providers are configured via the top-level "provider:" section
+	// (built-in engines always registered minus exclude, external suppliers
+	// connected via gRPC endpoint). Components[] no longer carries provider
+	// entries — buildProviderSystem must run before defaults are applied.
+	if err := b.buildProviderSystem(); err != nil {
+		return nil, err
+	}
+
 	for _, cc := range b.config.Components {
 		comp, err := b.buildComponent(cc)
 		if err != nil {
@@ -93,12 +101,21 @@ func (b *Builder) Build(opts ...BuildOption) (*App, error) {
 		}
 	}
 
-	// v0.14.1: register the unified ProviderManager created by native provider
-	// components (idempotent — WithProvider options may create it later too).
+	// v0.14.1: register the unified ProviderManager created by buildProviderSystem
+	// (idempotent — WithProvider options may create it later too).
 	b.registerProviderManager()
 
 	for typ, name := range b.config.Defaults {
 		compType := component.ComponentType(typ)
+		// v0.15.x: providers are managed by the single ProviderManager — the
+		// manager is the only ComponentProvider and auto-becomes default at
+		// Register. A defaults.provider entry is meaningless (it would
+		// reference a component name that never enters the Registry); skip
+		// with a warning so stale configs keep building.
+		if compType == component.ComponentProvider {
+			fmt.Fprintf(os.Stderr, "[builder] warn: defaults.provider is managed by ProviderManager, entry ignored\n")
+			continue
+		}
 		if err := b.registry.SetDefault(compType, name); err != nil {
 			return nil, fmt.Errorf("set default for %s: %w", typ, err)
 		}
@@ -259,27 +276,14 @@ func (b *Builder) buildAgentCore(cc ComponentConfig) (component.Component, error
 }
 
 func (b *Builder) buildProvider(cc ComponentConfig) (component.Component, error) {
-	switch cc.Driver {
-	case string(component.DriverNative):
-		// v0.14.1: native providers are registered into the unified
-		// ProviderManager (blacklist mechanism). All registered engines are
-		// enabled by default; the optional "exclude" config filters them out.
-		if err := b.buildNativeProviders(cc); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	case string(component.DriverHTTP), string(component.DriverProcess):
-		// TODO(problem C): unify process/http providers under ProviderManager.
-		// v0.14.1 keeps the existing standalone behavior.
-		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
-			Name:   cc.Name,
-			Pool:   b.pool,
-			Target: targetFromEnvOrConfig("GOGENT_PROVIDER_TARGET", cc.Config),
-		})
-		return provider.NewComponent(cc.Name, p), nil
-	default:
-		return nil, nil
-	}
+	// v0.15.x: provider components are removed from components[]. Providers
+	// are configured via the top-level "provider:" section — built-in engines
+	// (minus exclude) plus external gRPC suppliers. Rejecting the old form
+	// here surfaces stale configs with a clear migration hint.
+	return nil, fmt.Errorf(
+		"provider %q is configured via the top-level \"provider:\" section, not components[] "+
+			"(move it there; see config/example.yaml)",
+		cc.Name)
 }
 
 // ensureProviderManager lazily creates the unified ProviderManager component.
@@ -290,15 +294,27 @@ func (b *Builder) ensureProviderManager() *provider.ProviderManager {
 	return b.providerManager
 }
 
-// buildNativeProviders instantiates every registered engine (minus the ones
-// listed in the "exclude" config) and registers it into the ProviderManager.
-func (b *Builder) buildNativeProviders(cc ComponentConfig) error {
+// buildProviderSystem assembles the unified ProviderManager from the
+// top-level "provider:" config section (v0.15.x):
+//
+//  1. Built-in engines are always registered (database/sql driver pattern),
+//     minus the ones listed in provider.exclude. No provider config means
+//     all built-in engines are available.
+//  2. External suppliers (provider.servers) are connected over gRPC at their
+//     endpoint and registered under the given name. The name must not
+//     collide with a built-in engine (reserved namespace) so "/provider
+//     openai" can never silently route to a remote instead of the native
+//     engine.
+//
+// The manager is registered into the Registry by registerProviderManager.
+func (b *Builder) buildProviderSystem() error {
+	mgr := b.ensureProviderManager()
+
+	// 1. Built-in engines.
 	excluded := make(map[string]bool)
-	for _, e := range getStringSlice(cc.Config, "exclude") {
+	for _, e := range b.config.Provider.Exclude {
 		excluded[e] = true
 	}
-
-	mgr := b.ensureProviderManager()
 	for _, engine := range provider.RegisteredEngines() {
 		if excluded[engine] {
 			continue
@@ -311,6 +327,28 @@ func (b *Builder) buildNativeProviders(cc ComponentConfig) error {
 			return fmt.Errorf("register engine %s: %w", engine, err)
 		}
 	}
+
+	// 2. External gRPC suppliers.
+	for _, s := range b.config.Provider.Servers {
+		if provider.IsEngineRegistered(s.Name) {
+			return fmt.Errorf(
+				"provider server %q conflicts with builtin engine %q "+
+					"(rename the server, e.g. %q)",
+				s.Name, s.Name, s.Name+"-remote")
+		}
+		if s.Endpoint == "" {
+			return fmt.Errorf("provider server %q: endpoint is required", s.Name)
+		}
+		p := provider.NewProcessProvider(&provider.ProcessProviderConfig{
+			Name:   s.Name,
+			Pool:   b.pool,
+			Target: s.Endpoint,
+		})
+		if err := mgr.Register(s.Name, p); err != nil {
+			return fmt.Errorf("register provider server %s: %w", s.Name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -465,7 +503,6 @@ var componentDefaults = map[component.ComponentType]func() component.Component{
 		cm := contextmanager.NewDefaultContextManager()
 		return contextmanager.NewComponent("contextmanager-default", cm)
 	},
-	// TODO: default provider
 	// TODO: default tool
 	// TODO: default hook
 	// TODO: default channel

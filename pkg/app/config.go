@@ -41,10 +41,28 @@ type DefaultSandboxConfig struct {
 	Sandbox string `yaml:"sandbox,omitempty"` // sandbox instance name
 }
 
+// ProviderSection is the top-level provider configuration (v0.15.x).
+// Built-in engines are always registered (minus Exclude); external
+// suppliers listed in Servers are connected via gRPC endpoint and
+// registered into the same ProviderManager.
+type ProviderSection struct {
+	Exclude []string               `yaml:"exclude,omitempty"` // exclude built-in engines by name
+	Servers []ProviderServerConfig `yaml:"servers,omitempty"` // external gRPC suppliers
+}
+
+// ProviderServerConfig describes an external provider service connected
+// over gRPC. The server must expose gogent.v1.ProviderService at Endpoint.
+// Name must not collide with a built-in engine name (reserved namespace).
+type ProviderServerConfig struct {
+	Name     string `yaml:"name"`
+	Endpoint string `yaml:"endpoint,omitempty"` // gRPC target, e.g. "localhost:9092"
+}
+
 type Config struct {
 	Name          string                `yaml:"name"`
 	Version       string                `yaml:"version"`
 	Interface     InterfaceConfig       `yaml:"interface,omitempty"`
+	Provider      ProviderSection       `yaml:"provider,omitempty"` // v0.15.x top-level provider config
 	Components    []ComponentConfig     `yaml:"components,omitempty"`
 	Defaults      map[string]string     `yaml:"defaults,omitempty"`
 	Observability ObservabilityConfig   `yaml:"observability,omitempty"`
@@ -85,13 +103,6 @@ type ChannelConfig struct {
 	Endpoint   string        `yaml:"endpoint,omitempty"`
 	Command    []string      `yaml:"command,omitempty"`
 	Timeout    time.Duration `yaml:"timeout,omitempty"`
-}
-
-type ProviderConfig struct {
-	Endpoint string        `yaml:"endpoint,omitempty"`
-	ApiKey   string        `yaml:"apiKey,omitempty"`
-	Model    string        `yaml:"model,omitempty"`
-	Timeout  time.Duration `yaml:"timeout,omitempty"`
 }
 
 type ToolConfig struct {

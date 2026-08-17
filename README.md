@@ -162,17 +162,20 @@ tools:
     securityLevel: 0
 
 components:
-  # native provider：默认注册全部内置引擎，exclude 排除不需要的
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-
   # react agentcore：完整 ReAct 循环（推理 → 工具调用 → 观察 → 迭代）
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
     config:
       type: "react"
+
+# provider 域（可选；缺省 = 全部内置引擎 openai/deepseek/...）
+provider: {}
+# 排除引擎或接入外部供应商：
+#   exclude: ["deepseek"]
+#   servers:
+#     - name: "my-gateway"
+#       endpoint: "localhost:9092"   # 外部 ProviderService gRPC 地址
 ```
 
 ## 快速体验

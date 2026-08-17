@@ -114,9 +114,6 @@ func buildRealApp(t *testing.T, srvURL string, credEntries map[string]string) (*
 	cfg, err := ParseConfig([]byte(`
 name: flow-real
 components:
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
   - name: "agent-main"
     type: "agentcore"
     driver: "native"

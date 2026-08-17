@@ -81,21 +81,26 @@ for _, engine := range provider.RegisteredEngines() {
 }
 ```
 
-### 3.3 配置机制（黑名单）
+### 3.3 配置机制（顶级 provider 域）
 
-- **默认全开**：框架内置的所有 native 引擎默认启用，无需逐个声明
-- **黑名单排除**：用户用 `exclude` 字段排除不需要的引擎
-- **只声明连接可能性**：YAML 只描述"app 支持连接哪些供应商"，不含 apiKey/model——凭证与偏好属终端用户，运行时决定
+**v0.15.x 起 provider 采用顶级 `provider:` 域配置**，与 tool（`tools:`）/ sandbox（`sandboxes:`）对齐，不再占用 `components[]`：
+
+- **内置引擎始终注册**：框架内置引擎（openai/deepseek/...）无条件构建——`CreateEngine` 只构造实例不发请求，无 key 时调用才报错。无 `provider:` 域 = 全部内置引擎可用
+- **黑名单排除**：`provider.exclude` 排除不需要的引擎
+- **外部供应商**：`provider.servers` 以 gRPC endpoint 直连外部 ProviderService，注册进同一 ProviderManager
+- **只声明连接可能性**：YAML 不含 apiKey/model——凭证与偏好属终端用户，运行时决定
 
 ```yaml
-components:
-  # native provider：默认全开所有内置引擎，exclude 黑名单排除
-  - name: "provider-main"
-    type: "provider"
-    driver: "native"
-    config:
-      exclude: ["openai"]    # 可选；留空则全部启用
+provider:
+  exclude: ["openai"]        # 可选；留空则全部启用
+  servers:                   # 可选；外部供应商
+    - name: "my-gateway"
+      endpoint: "localhost:9092"
 ```
+
+**命名空间保护**：内置引擎名为保留名，`servers[].name` 与之冲突时构建报错——避免 `/provider openai` 静默路由到远端而非原生引擎（与 tool 的 builtin 名保护同构）。
+
+**defaults.provider 废弃**：ProviderManager 是唯一的 provider 组件且 Register 时自动成为默认，`defaults.provider` 条目失去意义（会被忽略并提示）。
 
 ### 3.4 路线选择（统一管理）
 
@@ -110,7 +115,7 @@ components:
 
 **选择路线 2**：单入口、支持 Router 扩展、配置一致，符合框架"可插拔可替换"的核心哲学。
 
-实施范围：native 路径先行（ProviderManager + 引擎注册表 + exclude 黑名单）；process/http 驱动保持独立行为（ProcessProvider 仅走 gRPC，其配置字段暂不扩展为 REST 直连）。
+**实施演进**：native 路径先行（ProviderManager + 引擎注册表 + exclude）；**v0.15.x 完成 problem C**——process/http 供应商（`provider.servers`）统一注册进 ProviderManager，以 gRPC endpoint 直连，不再以独立组件形式出现在 Registry。同时 provider 移出 `components[]`，采用顶级 `provider:` 域配置。
 
 ## 四、Provider 实现策略
 
@@ -128,8 +133,11 @@ pkg/provider/
 ├── deepseek.go              # DeepSeekProvider（OpenAI 兼容薄包装）
 ├── credentials.go           # CredentialStore 接口 + FileCredentialStore
 ├── ctx.go                   # WithProviderName/WithModel（ctx 携带路由）
-└── component.go / default.go / process.go   # 保留兼容（deprecated 标记）
+├── process.go               # ProcessProvider（gRPC 客户端，servers 外部供应商用）
+└── default.go               # 保留兼容（deprecated 标记）
 ```
+
+> `component.go`（ProviderComponent）已在 v0.15.x 删除——process/http 供应商不再需要组件包装，统一由 ProcessProvider 注册进 Manager。
 
 ### 4.2 IProvider 接口
 
