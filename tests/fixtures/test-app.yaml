@@ -1,0 +1,8 @@
+# Minimal test config for daemon lifecycle integration tests.
+# The agent started by the daemon only needs to Initialize and Start its
+# mgmt HTTP server; no AI provider or tool infrastructure is required.
+# Default components (Logger, EventBus, Memory, Sandbox) are provided
+# by the framework's registerDefaults() fallback.
+
+name: test-app
+version: "1.0.0"

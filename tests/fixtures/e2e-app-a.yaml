@@ -1,0 +1,5 @@
+name: e2e-app-a
+version: "1.0.0"
+
+# Minimal config — relies on framework defaults for:
+# logger, sandbox, eventbus, memory

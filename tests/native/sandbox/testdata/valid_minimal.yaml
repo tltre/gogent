@@ -1,0 +1,10 @@
+sandbox-providers:
+  my-e2b:
+    type: e2b
+    endpoint: "https://api.e2b.app"
+    apiKey: "sk-test-minimal"
+
+sandbox-profiles:
+  default-shell:
+    provider: my-e2b
+    template: "base"

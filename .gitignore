@@ -34,7 +34,4 @@ vendor/
 .env.local
 *.log
 
-# Tests
-tests/
-
 polygrapher/

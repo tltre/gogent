@@ -1,0 +1,6 @@
+sandbox-providers:
+  bad-entry:
+    type: e2b
+    endpoint: ""https://api.e2b.app""
+    apiKey: test
+{{{{ invalid yaml

@@ -1,0 +1,78 @@
+name: e2e-daemon-app
+version: "0.10.0"
+
+interface:
+  type: cli
+  cli:
+    banner: "E2E Daemon App  |  exit to quit"
+    prompt: "> "
+
+observability:
+  otel:
+    enabled: true
+    endpoint: "localhost:4317"
+    service_name: "e2e-daemon-app"
+    service_version: "0.10.0"
+    environment: "e2e"
+
+defaults:
+  provider: "provider-main"
+  memory: "memory-main"
+  contextmanager: "context-main"
+  tool: "tool-service"
+  agentcore: "agent-main"
+
+components:
+  - name: "provider-main"
+    type: "provider"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "agent-main"
+    type: "agentcore"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "memory-main"
+    type: "memory"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "tool-service"
+    type: "tool"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "hooks-main"
+    type: "hook"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "context-main"
+    type: "contextmanager"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "eventbus-main"
+    type: "eventbus"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "sandbox-main"
+    type: "sandbox"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"
+
+  - name: "channel-main"
+    type: "channel"
+    driver: "process"
+    config:
+      command: "./stubcomponent.exe"

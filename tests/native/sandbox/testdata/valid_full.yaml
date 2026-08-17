@@ -1,0 +1,33 @@
+sandbox-providers:
+  my-e2b:
+    type: e2b
+    endpoint: "https://api.e2b.app"
+    apiKey: "sk-test-12345"
+
+  local-builtin:
+    type: builtin
+
+sandbox-profiles:
+  restricted-shell:
+    provider: my-e2b
+    template: "code-interpreter-v1"
+    network: false
+    maxMemoryMB: 256
+    maxCPUTime: "30s"
+    readOnlyRoot: true
+    allowCommands:
+      - ls, cat, grep, echo, pwd
+
+  workspace:
+    provider: my-e2b
+    template: "code-interpreter-v1"
+    network: true
+    lifecycle:
+      mode: persistent
+      timeout: "3600s"
+
+defaults:
+  builtin:
+    profile: restricted-shell
+  process:
+    profile: restricted-shell
