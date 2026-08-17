@@ -1,6 +1,6 @@
 # 配置参考
 
-本文档逐项说明 Gogent 应用 YAML 配置的结构与字段含义。完整可运行示例见 [`config/provider-verify.yaml`](../config/provider-verify.yaml) 与 [`config/example.yaml`](../config/example.yaml)。
+本文档逐项说明 Gogent 应用 YAML 配置的结构与字段含义。完整可运行示例见 [`config/example.yaml`](../config/example.yaml)。
 
 ## 顶层结构
 
@@ -136,7 +136,7 @@ observability:
   otel:
     enabled: true
     endpoint: "127.0.0.1:4317"   # OTLP gRPC 地址，或 "console"（stdout 调试）
-    service_name: "verify-agent" # Jaeger 中显示的服务名
+    service_name: "example-agent" # Jaeger 中显示的服务名
     service_version: "0.15.x"    # 可选
     environment: "dev"           # 可选
     sample_rate: 1.0             # 可选，0.0-1.0，默认全采样

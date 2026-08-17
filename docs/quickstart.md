@@ -23,11 +23,11 @@ go build -o gogent.exe ./cmd/gogent
 ## 2. 查看示例配置
 
 ```bash
-gogent validate config/provider-verify.yaml   # 离线校验 YAML
-gogent inspect config/provider-verify.yaml    # 展示解析后的配置
+gogent validate config/example.yaml   # 离线校验 YAML
+gogent inspect config/example.yaml    # 展示解析后的配置
 ```
 
-`config/provider-verify.yaml` 是一个完整可运行的示例，包含：
+`config/example.yaml` 是一个完整可运行的示例，包含：
 
 - **interface**：CLI 交互界面（chat REPL）
 - **observability**：OTel 导出到本地 Jaeger（可选）
@@ -42,7 +42,7 @@ gogent inspect config/provider-verify.yaml    # 展示解析后的配置
 
 ```bash
 # Windows
-$env:USERPROFILE\.gogent\apps\verify-agent\credentials.yaml
+$env:USERPROFILE\.gogent\apps\example-agent\credentials.yaml
 # 内容：
 # openai: "sk-你的OPENAIkey"
 # deepseek: "sk-你的DEEPSEEKkey"
@@ -53,7 +53,7 @@ $env:USERPROFILE\.gogent\apps\verify-agent\credentials.yaml
 ## 4. 启动 agent
 
 ```bash
-./gogent.exe run config/provider-verify.yaml
+./gogent.exe run config/example.yaml
 ```
 
 执行流程：
@@ -122,7 +122,7 @@ docker run --rm -d --name jaeger \
   jaegertracing/all-in-one:latest
 ```
 
-打开 http://localhost:16686 → Search → 按 `service: verify-agent` 搜索，可以看到：
+打开 http://localhost:16686 → Search → 按 `service: example-agent` 搜索，可以看到：
 
 ```
 agent.run                 ← ReAct 总流程
@@ -140,7 +140,7 @@ agent.run                 ← ReAct 总流程
 ./gogent.exe status            # 组件状态表
 ./gogent.exe doctor            # 逐一健康检查
 ./gogent.exe logs              # 实时日志流
-./gogent.exe stop verify-agent # 停止 agent
+./gogent.exe stop example-agent # 停止 agent
 ```
 
 ## 下一步

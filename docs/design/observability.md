@@ -82,7 +82,7 @@ observability:
   otel:
     enabled: true
     endpoint: "127.0.0.1:4317"   # OTLP gRPC，或 "console" 输出到 stdout
-    service_name: "verify-agent"
+    service_name: "example-agent"
     service_version: "0.15.x"    # 可选
     environment: "dev"           # 可选
     sample_rate: 1.0             # 可选，0.0-1.0，默认全采样
@@ -120,9 +120,9 @@ docker run --rm -d --name jaeger \
 ### 4.2 观测步骤
 
 1. 启动 Jaeger（如上）
-2. 启动应用：`./gogent.exe run config/provider-verify.yaml`
+2. 启动应用：`./gogent.exe run config/example.yaml`
 3. 打开 http://localhost:16686 → Search
-4. 按 `service: verify-agent` 搜索，查看完整 trace
+4. 按 `service: example-agent` 搜索，查看完整 trace
 
 **验证点**（工具调用是否真实执行）：
 
@@ -212,5 +212,5 @@ ctx = logger.WithTraceID(ctx)
 - OTel Go SDK：`go.opentelemetry.io/otel`（tracing）、`otlptracegrpc`（导出）、`otelgrpc`（gRPC 传播）
 - 内部基础设施：`internal/otel/` — `InitFromConfig` / `Tracer` / `SetTracerProvider`
 - 插桩实现：`pkg/agentcore/react.go`（agent.run/agent.llm.generate）、`pkg/tool/manager.go`（tool.exec + 事件）
-- 配置示例：`config/provider-verify.yaml`（仓库根目录）
+- 配置示例：`config/example.yaml`（仓库根目录）
 - 关联设计：Agent Core（[agent.md](./agent.md)）、工具生态（[tool.md](./tool.md)）

@@ -71,7 +71,7 @@ func init() {
 Provider 凭证文件格式（精确键，与引擎名一致）：
 
 ```yaml
-# ~/.gogent/apps/verify-agent/credentials.yaml
+# ~/.gogent/apps/example-agent/credentials.yaml
 openai: "sk-..."
 deepseek: "sk-..."
 ```

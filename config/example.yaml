@@ -1,108 +1,47 @@
-name: my-agent
+name: example-agent
 version: "1.0.0"
 
 interface:
   type: cli
   cli:
-    banner: "Welcome to Gogent Agent"
+    banner: "Gogent Example Agent — use /provider and /model to switch"
     prompt: "> "
 
+# OpenTelemetry 观测（v0.15.x）：导出到 OTLP collector（Jaeger/Tempo）。
+# 本地观测：先启动 Jaeger（见 docs/design/observability.md），
+# 再启动本应用——Jaeger 网页 http://localhost:16686 查看完整 trace。
+observability:
+  otel:
+    enabled: true
+    endpoint: "127.0.0.1:4317"   # OTLP gRPC（Jaeger 默认端口）。用 127.0.0.1 而非 localhost：
+                                 # Windows 上 grpc.NewClient("localhost:...") 的双栈解析可能挂起导致导出超时
+    service_name: "example-agent"
+    environment: "dev"
+
+# 工具声明（v0.12.2 声明式设计）：builtin 工具也必须显式声明才可用。
+# daemon 内置：calculator（计算）/ think（推理）/ todo（待办）。
+tools:
+  - name: calculator
+    securityLevel: 3
+  - name: think
+    securityLevel: 0
+  - name: todo
+    securityLevel: 0
+
 components:
-  # EventBus - 消息总线
-  - name: "eventbus-main"
-    type: "eventbus"
-    driver: "native"
-
-  # Logger - 日志组件
-  - name: "logger-main"
-    type: "logger"
-    driver: "native"
-    config:
-      level: "info"
-      format: "console"
-      output: "stderr"
-
-  # Provider - LLM 提供者
-  - name: "provider-openai"
+  # native provider：默认注册全部内置引擎（openai / deepseek / ...），
+  # 用 exclude 排除不需要的引擎。
+  # builder 注册为 ProviderManager 组件 "provider-manager"，自动成为默认 provider。
+  - name: "provider-main"
     type: "provider"
-    driver: "http"
-    config:
-      endpoint: "https://api.openai.com/v1"
-      apiKey: "${OPENAI_API_KEY}"
-      model: "gpt-4"
-      timeout: "60s"
-
-  # Tool Manager - 工具管理
-  - name: "tools-main"
-    type: "tool"
     driver: "native"
-    config:
-      tools:
-        - name: "calculator"
-          description: "Calculate mathematical expressions"
-          driver: "native"
-        - name: "search"
-          description: "Search the web"
-          driver: "http"
-          endpoint: "http://localhost:8080/tools/search"
+    # config:
+    #   exclude: ["deepseek"]
 
-  # Hook Manager - 钩子管理
-  - name: "hooks-main"
-    type: "hook"
-    driver: "native"
-    config:
-      hooks:
-        - name: "logger"
-          driver: "native"
-          events: ["beforeRun", "afterRun", "error"]
-
-  # Context Manager - 上下文管理
-  - name: "context-main"
-    type: "contextmanager"
-    driver: "native"
-
-  # Memory - 记忆存储
-  - name: "memory-main"
-    type: "memory"
-    driver: "native"
-
-  # Sandbox - 沙箱环境
-  - name: "sandbox-main"
-    type: "sandbox"
-    driver: "native"
-    config:
-      maxMemoryMB: 512
-      maxCPUTime: "10s"
-      networkAccess: false
-      allowedCommands: ["python3", "node", "bash"]
-      readOnlyRoot: true
-
-  # Channel - 消息渠道
-  - name: "channel-cli"
-    type: "channel"
-    driver: "native"
-    config:
-      bufferSize: 100
-
-  # AgentCore - Agent 核心
+  # react agentcore：完整 ReAct 循环（推理 → 工具调用 → 观察 → 迭代）。
+  # 注册为 AgentRuntime，自动成为默认 agentcore。
   - name: "agent-main"
     type: "agentcore"
     driver: "native"
-    dependencies:
-      provider: "provider-openai"
-      toolManager: "tools-main"
-      hookManager: "hooks-main"
-      contextManager: "context-main"
-      memory: "memory-main"
-      eventBus: "eventbus-main"
-
-defaults:
-  eventbus: "eventbus-main"
-  logger: "logger-main"
-  provider: "provider-openai"
-  tool: "tools-main"
-  hook: "hooks-main"
-  contextmanager: "context-main"
-  memory: "memory-main"
-  sandbox: "sandbox-main"
-  agentcore: "agent-main"
+    config:
+      type: "react"

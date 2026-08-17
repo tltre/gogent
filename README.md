@@ -78,14 +78,14 @@ flowchart TB
 
 | 功能 | 能力说明 | 如何验证 |
 |------|---------|---------|
-| 组件系统 | 9 类组件、Registry 拓扑排序、`With*` 注入 > YAML > 默认实现三级优先级 | `gogent run config/provider-verify.yaml` 后 `gogent status` 查看组件状态表 |
+| 组件系统 | 9 类组件、Registry 拓扑排序、`With*` 注入 > YAML > 默认实现三级优先级 | `gogent run config/example.yaml` 后 `gogent status` 查看组件状态表 |
 | 多引擎 Provider | `openai` / `deepseek` 原生引擎 + OpenAI 兼容基类；模型列表动态拉取（10 分钟缓存） | REPL 内 `/provider` 列出全部引擎与模型，`/provider deepseek` 即时切换 |
 | ReAct Agent | 工具声明注入 → 迭代（上限 10 轮）→ 结果回填 → 错误自纠正 → 工具交互存档至 Memory | 在 chat 中提问需要工具计算的问题，观察多轮迭代与最终回答 |
 | 多应用管理 | daemon fork 独立子进程、端口分配、崩溃检测、daemon 崩溃恢复（PID 探测） | `gogent serve <config>` + `gogent list`；kill 掉 agent 进程后观察 `gogent doctor` |
 | 工具注册表 | builtin（calculator/think/todo）+ MCP server 子工具展开；manifest 声明式授权；命名冲突保护 | `gogent tool list` 查看所有工具与状态；App 未声明的工具执行被拒绝 |
 | MCP 生态 | process（stdio）/ http（streamable）双驱动；MCP Ping 30s 探活；连续 3 次失败自动重启 | `gogent tool status <server>` 观察 ACTIVE/UNHEALTHY 状态迁移 |
 | 沙箱隔离 | E2B MicroVM + profiles + per-tool 路由；凭证经 `internal/credentials` 统一解析 | `gogent sandbox status`；配置 E2B key 后执行 shell 工具观察路由到沙箱 |
-| OTel 可观测 | 三级 span + 工具执行审计事件；OTLP gRPC 导出 | 启动 Jaeger（`docker run -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one`）后按 `service: verify-agent` 搜索 trace |
+| OTel 可观测 | 三级 span + 工具执行审计事件；OTLP gRPC 导出 | 启动 Jaeger（`docker run -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one`）后按 `service: example-agent` 搜索 trace |
 | 凭证管理 | app 作用域 `credentials.yaml`、`/key` 交互配置、密钥脱敏、CredentialStore 可替换（Vault/keyring） | REPL 内 `/key openai sk-...` 保存后直接使用，`/key` 查看脱敏状态 |
 
 ## 快速开始
@@ -111,7 +111,7 @@ import (
 )
 
 func main() {
-    builder, err := app.NewBuilder("config/provider-verify.yaml")
+    builder, err := app.NewBuilder("config/example.yaml")
     if err != nil {
         panic(err)
     }
@@ -134,23 +134,23 @@ func main() {
 
 ### 配置文件示例
 
-完整的可运行示例见 [`config/provider-verify.yaml`](config/provider-verify.yaml)（OpenAI + DeepSeek 双引擎、react agent、OTel 观测）：
+完整的可运行示例见 [`config/example.yaml`](config/example.yaml)（OpenAI + DeepSeek 双引擎、react agent、OTel 观测）：
 
 ```yaml
-name: verify-agent
+name: example-agent
 version: "1.0.0"
 
 interface:
   type: cli
   cli:
-    banner: "Provider Verify Agent — use /provider and /model to switch"
+    banner: "Gogent Example Agent — use /provider and /model to switch"
     prompt: "> "
 
 observability:
   otel:
     enabled: true
     endpoint: "127.0.0.1:4317"   # OTLP gRPC（Jaeger/Tempo 默认端口）
-    service_name: "verify-agent"
+    service_name: "example-agent"
     environment: "dev"
 
 tools:
@@ -182,7 +182,7 @@ components:
 go build -o gogent.exe ./cmd/gogent
 
 # 启动 agent（自动拉起 daemon，进入交互式 chat REPL）
-./gogent.exe run config/provider-verify.yaml
+./gogent.exe run config/example.yaml
 ```
 
 进入 REPL 后：
@@ -225,7 +225,7 @@ Gogent 是"运行 agent 应用的操作系统"，LangGraph 是"编写 agent 逻�
 
 ```
 cmd/gogent/              # 框架 CLI 入口（run/serve/stop/list/status/doctor/logs/tool/sandbox/daemon...）
-config/                  # 配置示例（example.yaml / provider-verify.yaml / verify.yaml）
+config/                  # 配置示例（example.yaml）
 internal/
 ├── api/                 # HTTP API 路径与共享类型
 ├── credentials/         # 统一凭证解析（credentials.yaml + ${VAR} + fsnotify 热加载）
