@@ -14,6 +14,7 @@
 |------|------|---------|
 | [provider.md](provider.md) | Provider 模块：多供应商引擎、ProviderManager 统一管理、凭证体系 | v0.14.x |
 | [agent.md](agent.md) | Agent Core：ReactAgent 的 ReAct 循环、上下文/记忆架构 | v0.15.x |
+| [contextmanager.md](contextmanager.md) | ContextManager：压缩摘要机制（checkpoint/AOF/视图 + 模型规格表） | v0.16.x（规划） |
 | [observability.md](observability.md) | 可观测性：OTel 插桩、span 结构、多进程导出方案 | v0.15.x |
 | [daemon.md](daemon.md) | Daemon：多应用生命周期管理、进程隔离、崩溃恢复 | v0.11.x+ |
 | [tool.md](tool.md) | 工具生态：ToolRegistry、MCP server、执行管线 | v0.12.x |
