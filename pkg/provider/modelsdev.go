@@ -287,3 +287,25 @@ func (s *ModelSpecs) writeCache(raw []byte) {
 	}
 	_ = os.Rename(tmp, path)
 }
+
+// TestLimit is a lightweight limit descriptor for test catalog injection.
+type TestLimit struct {
+	Context int
+	Output  int
+}
+
+// SetProvidersForTest injects a provider catalog directly (tests) without
+// network or disk I/O. It is not part of the production API.
+func (s *ModelSpecs) SetProvidersForTest(models map[string]TestLimit) {
+	providers := make(map[string]modelsDevProvider, 1)
+	inner := make(map[string]modelsDevModel, len(models))
+	for name, l := range models {
+		inner[name] = modelsDevModel{Limit: modelsDevLimit{Context: l.Context, Output: l.Output}}
+	}
+	providers["openai"] = modelsDevProvider{Models: inner}
+	s.mu.Lock()
+	s.providers = providers
+	s.loaded = true
+	s.dataTime = time.Now()
+	s.mu.Unlock()
+}

@@ -181,6 +181,12 @@ func (m *ProviderManager) setSpecs(specs *ModelSpecs) {
 	m.specs = specs
 }
 
+// SetSpecsForTest injects a ModelSpecs instance for tests. Not part of the
+// production API.
+func (m *ProviderManager) SetSpecsForTest(specs *ModelSpecs) {
+	m.setSpecs(specs)
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch (v0.14.7)
 //

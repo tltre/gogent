@@ -65,30 +65,38 @@ func (c *DefaultContextManager) providerManager() *provider.ProviderManager {
 // (catalog unavailable) or compression is disabled — callers must treat 0 as
 // "do not compress".
 func (c *DefaultContextManager) usable(ctx context.Context, s *sessionState, cfg CompressionConfig) int {
-	pm := c.providerManager()
-	if pm == nil {
-		return 0
-	}
-	model := s.lastModel
-	if model == "" {
-		model = modelFromContext(ctx)
-	}
-	limits := pm.ModelLimitsFor(provider.ProviderNameFrom(ctx), model)
-	if limits.ContextSize <= 0 {
-		return 0
+	contextSize := cfg.ContextSizeOverride
+	maxOutput := 0
+	if contextSize <= 0 {
+		pm := c.providerManager()
+		if pm == nil {
+			return 0
+		}
+		model := s.lastModel
+		if model == "" {
+			model = modelFromContext(ctx)
+		}
+		limits := pm.ModelLimitsFor(provider.ProviderNameFrom(ctx), model)
+		if limits.ContextSize <= 0 {
+			return 0
+		}
+		contextSize = limits.ContextSize
+		maxOutput = limits.MaxOutput
 	}
 	reserved := cfg.Reserved
 	if reserved <= 0 {
-		maxOut := limits.MaxOutput
-		if maxOut <= 0 {
-			maxOut = defaultCompactionBuffer
+		// Reserve space for model output when known; otherwise reserve nothing
+		// (unknown output → the full window is treated as input budget).
+		switch {
+		case maxOutput > 0 && maxOutput < defaultCompactionBuffer:
+			reserved = maxOutput
+		case maxOutput >= defaultCompactionBuffer:
+			reserved = defaultCompactionBuffer
+		default:
+			reserved = 0
 		}
-		if maxOut > defaultCompactionBuffer {
-			maxOut = defaultCompactionBuffer
-		}
-		reserved = maxOut
 	}
-	if usable := limits.ContextSize - reserved; usable > 0 {
+	if usable := contextSize - reserved; usable > 0 {
 		return usable
 	}
 	return 0

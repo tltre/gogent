@@ -46,6 +46,9 @@ type CompressionConfig struct {
 	Reserved int
 	// Model: summarizer model; empty = follow the session's current model.
 	Model string
+	// ContextSizeOverride: an explicit context-window size that bypasses the
+	// remote catalog (self-hosted gateways / private models). 0 = use catalog.
+	ContextSizeOverride int
 	// MaxFailures: consecutive compaction failures before the circuit breaker
 	// disables compression for a session. Default 3.
 	MaxFailures int
