@@ -394,6 +394,9 @@ func TestOpenAIAPIKeyMissing(t *testing.T) {
 }
 
 func TestOpenAIModelInfo(t *testing.T) {
+	// Keep the model-catalog lookup offline/deterministic: without the
+	// centralized catalog (fetch disabled), ContextSize resolves to 0.
+	t.Setenv(ModelsDevEnvDisable, "1")
 	m := newMockChatServer(t, http.StatusOK, `{}`)
 	p := newTestOpenAI(m)
 
@@ -412,9 +415,9 @@ func TestOpenAIModelInfo(t *testing.T) {
 	if info.Name != "gpt-4o" {
 		t.Errorf("ModelInfo.Name = %q, want gpt-4o (first from mock /models)", info.Name)
 	}
-	// ContextSize is reserved/deferred — must be 0 (not hardcoded).
+	// ContextSize comes from the centralized catalog; disabled → 0 (unknown).
 	if info.ContextSize != 0 {
-		t.Errorf("ModelInfo.ContextSize = %d, want 0 (reserved/deferred)", info.ContextSize)
+		t.Errorf("ModelInfo.ContextSize = %d, want 0 (catalog disabled)", info.ContextSize)
 	}
 }
 

@@ -75,6 +75,8 @@ func TestDeepSeekModelOverride(t *testing.T) {
 }
 
 func TestDeepSeekModelInfo(t *testing.T) {
+	// Keep the model-catalog lookup offline/deterministic (disabled → 0).
+	t.Setenv(ModelsDevEnvDisable, "1")
 	m := newMockChatServer(t, http.StatusOK, `{}`)
 	m.models = `{
 		"object": "list",
@@ -100,8 +102,9 @@ func TestDeepSeekModelInfo(t *testing.T) {
 	if len(info.Models) != 2 || info.Models[0] != "deepseek-chat" || info.Models[1] != "deepseek-reasoner" {
 		t.Errorf("Models = %v, want [deepseek-chat deepseek-reasoner] from mock /models", info.Models)
 	}
+	// ContextSize comes from the centralized catalog; disabled → 0 (unknown).
 	if info.ContextSize != 0 {
-		t.Errorf("ContextSize = %d, want 0 (reserved/deferred)", info.ContextSize)
+		t.Errorf("ContextSize = %d, want 0 (catalog disabled)", info.ContextSize)
 	}
 }
 

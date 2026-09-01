@@ -80,7 +80,7 @@ func NewDeepSeek(cfg DeepSeekConfig) *DeepSeekProvider {
 // ModelInfo returns the capability declaration of this provider. The model
 // list and the default model are fetched dynamically from the DeepSeek
 // /models endpoint via the shared OpenAI implementation (never hardcoded).
-// ContextSize is reserved/deferred.
+// ContextSize is resolved from the centralized model catalog; 0 when unknown.
 func (p *DeepSeekProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
 		Name:           p.OpenAIProvider.resolveDefaultModel(context.Background()),
@@ -89,5 +89,6 @@ func (p *DeepSeekProvider) ModelInfo() ModelInfo {
 		SupportsTool:   true,
 		SupportsVision: false,
 		Models:         p.OpenAIProvider.fetchModels(context.Background()),
+		ContextSize:    p.OpenAIProvider.catalogContextSize("deepseek"),
 	}
 }

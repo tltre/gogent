@@ -237,7 +237,8 @@ func (p *OpenAIProvider) Stream(ctx context.Context, messages []ProviderMessage)
 // ModelInfo returns the capability declaration of this provider. The model
 // list is fetched dynamically from {baseURL}/models (never hardcoded), and
 // the default model (Name) resolves to the first entry of that list when not
-// explicitly configured. ContextSize is reserved/deferred.
+// explicitly configured. ContextSize is resolved from the centralized model
+// catalog (models.opencode.ai) for the default model; 0 when unknown.
 func (p *OpenAIProvider) ModelInfo() ModelInfo {
 	return ModelInfo{
 		Name:           p.resolveDefaultModel(context.Background()),
@@ -246,7 +247,20 @@ func (p *OpenAIProvider) ModelInfo() ModelInfo {
 		SupportsTool:   true,
 		SupportsVision: true,
 		Models:         p.fetchModels(context.Background()),
+		ContextSize:    p.catalogContextSize(p.providerName),
 	}
+}
+
+// catalogContextSize resolves the context window for the provider's default
+// model from the centralized model catalog. Returns 0 when the provider name
+// is empty or the model is unknown.
+func (p *OpenAIProvider) catalogContextSize(providerName string) int {
+	if providerName == "" {
+		return 0
+	}
+	model := p.resolveDefaultModel(context.Background())
+	ctx, _ := defaultSpecs.Get(providerName, model)
+	return ctx
 }
 
 // ---------------------------------------------------------------------------

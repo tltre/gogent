@@ -31,6 +31,10 @@ type ProviderManager struct {
 	component.BasicComponent
 	mu        sync.RWMutex
 	providers map[string]IProvider
+	// specs is the centralized model-limit catalog (context / max-output).
+	// Defaults to the process-wide defaultSpecs; tests inject a configured
+	// instance via setSpecs to avoid touching the network.
+	specs *ModelSpecs
 }
 
 // NewManagerComponent creates a ProviderManager component with the given name.
@@ -38,6 +42,7 @@ func NewManagerComponent(name string) *ProviderManager {
 	return &ProviderManager{
 		BasicComponent: component.NewBasicComponent(name),
 		providers:      make(map[string]IProvider),
+		specs:          defaultSpecs,
 	}
 }
 
@@ -128,6 +133,52 @@ func (m *ProviderManager) List() []ProviderInfo {
 		infos = append(infos, info)
 	}
 	return infos
+}
+
+// ---------------------------------------------------------------------------
+// Model limits (v0.16.x)
+//
+// Context-window and max-output limits come from the centralized ModelSpecs
+// catalog (models.opencode.ai), resolved per the current provider/model in the
+// context. An unknown provider/model returns 0 — callers must treat 0 as
+// "unknown" and disable context-sensitive features rather than guess.
+// ---------------------------------------------------------------------------
+
+// ModelLimits is the context / max-output pair for a provider+model.
+type ModelLimits struct {
+	ContextSize int
+	MaxOutput   int
+}
+
+// ModelLimitsFor returns the catalog limits for provider+model (0,0 unknown).
+func (m *ProviderManager) ModelLimitsFor(providerName, model string) ModelLimits {
+	specs := m.specs
+	if specs == nil {
+		specs = defaultSpecs
+	}
+	ctx, out := specs.Get(providerName, model)
+	return ModelLimits{ContextSize: ctx, MaxOutput: out}
+}
+
+// ContextSizeFor returns the context window for the given model under the
+// provider selected in ctx (empty provider name = first registered engine).
+func (m *ProviderManager) ContextSizeFor(ctx context.Context, model string) int {
+	return m.ModelLimitsFor(ProviderNameFrom(ctx), model).ContextSize
+}
+
+// MaxOutputFor returns the max-output limit for the given model under the
+// provider selected in ctx (empty provider name = first registered engine).
+func (m *ProviderManager) MaxOutputFor(ctx context.Context, model string) int {
+	name := ProviderNameFrom(ctx)
+	return m.ModelLimitsFor(name, model).MaxOutput
+}
+
+// setSpecs injects a ModelSpecs instance (tests). It is not part of the
+// component lifecycle and must be called before Start.
+func (m *ProviderManager) setSpecs(specs *ModelSpecs) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.specs = specs
 }
 
 // ---------------------------------------------------------------------------
