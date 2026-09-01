@@ -47,3 +47,15 @@ components:
     driver: "native"
     config:
       type: "react"
+  - name: "contextmanager-default"
+    type: "contextmanager"
+    driver: "native"
+    config:
+      contextSize: 128000        # L3 override 规格表（可选）
+      compression:
+        enabled: true
+        softRatio: 0.7
+        hardRatio: 0.9
+        minTokens: 4000
+        reserved: 20000          # 输出预留余量（D2）
+        model: ""                # 摘要模型，空 = 跟随会话当前模型

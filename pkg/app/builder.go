@@ -405,9 +405,51 @@ func (b *Builder) buildContextManager(cc ComponentConfig) (component.Component, 
 			Target: targetFromEnvOrConfig("GOGENT_CONTEXT_TARGET", cc.Config),
 		})
 		return contextmanager.NewComponent(cc.Name, cm), nil
+	case string(component.DriverNative):
+		cm := contextmanager.NewDefaultContextManager()
+		cm.SetCompressionConfig(compressionConfigFromYAML(cc.Config))
+		return contextmanager.NewComponent(cc.Name, cm), nil
 	default:
 		return nil, nil
 	}
+}
+
+// compressionConfigFromYAML parses the contextmanager component's
+// config.compression section into a CompressionConfig. Missing keys fall back
+// to the framework defaults (DefaultCompressionConfig).
+func compressionConfigFromYAML(m map[string]any) contextmanager.CompressionConfig {
+	cfg := contextmanager.DefaultCompressionConfig()
+	// Top-level contextSize override: bypasses the remote catalog for
+	// self-hosted gateways / private models whose limits the catalog lacks.
+	if v, ok := m["contextSize"].(int); ok && v > 0 {
+		cfg.ContextSizeOverride = v
+	}
+	sec, ok := m["compression"].(map[string]any)
+	if !ok {
+		return cfg
+	}
+	if v, ok := sec["enabled"].(bool); ok {
+		cfg.Enabled = v
+	}
+	if v, ok := sec["softRatio"].(float64); ok {
+		cfg.SoftRatio = v
+	}
+	if v, ok := sec["hardRatio"].(float64); ok {
+		cfg.HardRatio = v
+	}
+	if v, ok := sec["minTokens"].(int); ok {
+		cfg.MinTokens = v
+	}
+	if v, ok := sec["reserved"].(int); ok {
+		cfg.Reserved = v
+	}
+	if v, ok := sec["model"].(string); ok {
+		cfg.Model = v
+	}
+	if v, ok := sec["maxFailures"].(int); ok {
+		cfg.MaxFailures = v
+	}
+	return cfg
 }
 
 func (b *Builder) buildMemory(cc ComponentConfig) (component.Component, error) {
