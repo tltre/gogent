@@ -81,7 +81,7 @@ func TestBuildInputAssembly(t *testing.T) {
 		t.Fatalf("AddMessage() = %v", err)
 	}
 
-	input := cm.BuildInput(sid, []ContextMessage{
+	input := cm.BuildInput(context.Background(), sid, []ContextMessage{
 		{Role: "user", Content: "current question"},
 	})
 
@@ -114,7 +114,7 @@ func TestBuildInputMemoryInjection(t *testing.T) {
 	}
 
 	sid := cm.NewSession()
-	input := cm.BuildInput(sid, []ContextMessage{
+	input := cm.BuildInput(context.Background(), sid, []ContextMessage{
 		{Role: "user", Content: "how should you answer"},
 	})
 
@@ -132,7 +132,7 @@ func TestProcessContextManagerBuildInputDegrades(t *testing.T) {
 		Pool:   grpctransport.NewPool(),
 		Target: "127.0.0.1:1", // nothing listening
 	})
-	input := pc.BuildInput("sid", []ContextMessage{{Role: "user", Content: "hi"}})
+	input := pc.BuildInput(context.Background(), "sid", []ContextMessage{{Role: "user", Content: "hi"}})
 	if len(input) == 0 || input[len(input)-1].Content != "hi" {
 		t.Errorf("BuildInput degrade = %+v, want last user message present", input)
 	}

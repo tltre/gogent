@@ -55,6 +55,12 @@ func (c *ContextManagerComponent) Dependencies() map[string]component.Dependency
 			Type:     component.ComponentMemory,
 			Required: false,
 		},
+		// v0.16.x: compression resolves the ProviderManager for context-window
+		// lookups and the LLM summarizer.
+		"Provider": {
+			Type:     component.ComponentProvider,
+			Required: false,
+		},
 	}
 }
 
@@ -100,8 +106,8 @@ func (c *ContextManagerComponent) ListSessions() []string {
 	return c.manager.ListSessions()
 }
 
-func (c *ContextManagerComponent) BuildInput(sessionId string, messages []ContextMessage) []ContextMessage {
-	return c.manager.BuildInput(sessionId, messages)
+func (c *ContextManagerComponent) BuildInput(ctx context.Context, sessionId string, messages []ContextMessage) []ContextMessage {
+	return c.manager.BuildInput(ctx, sessionId, messages)
 }
 
 func (c *ContextManagerComponent) log(ctx context.Context, level logger.Level, msg string, fields ...logger.Field) {

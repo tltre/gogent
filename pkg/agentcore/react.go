@@ -122,7 +122,7 @@ func (a *ReactAgent) runReAct(ctx context.Context, input Input) (Output, error) 
 	var messages []provider.ProviderMessage
 	cm := a.contextManager()
 	if cm != nil {
-		built := cm.BuildInput(input.SessionID, toContextMessages(input.Messages))
+		built := cm.BuildInput(ctx, input.SessionID, toContextMessages(input.Messages))
 		messages = contextMessagesToProvider(built, toolDefs)
 	} else {
 		messages = toProviderMessages(input.Messages)

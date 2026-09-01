@@ -128,8 +128,9 @@ func (c *ProcessContextManager) BuildSystemPrompt(sessionId string) string {
 
 // BuildInput assembles the complete model input. There is no remote BuildInput
 // RPC yet, so this degrades to a local assembly (system prompt + history +
-// user messages). Memory injection for the remote path is a follow-up.
-func (c *ProcessContextManager) BuildInput(sessionId string, messages []ContextMessage) []ContextMessage {
+// user messages). Memory injection for the remote path is a follow-up. The
+// remote (process) path does not implement context-window compression.
+func (c *ProcessContextManager) BuildInput(ctx context.Context, sessionId string, messages []ContextMessage) []ContextMessage {
 	input := make([]ContextMessage, 0, len(messages)+8)
 	if sys := c.BuildSystemPrompt(sessionId); sys != "" {
 		input = append(input, ContextMessage{Role: "system", Content: sys})

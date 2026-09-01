@@ -60,7 +60,7 @@ func (m *mockContextManager) ListSessions() []string {
 	return ids
 }
 
-func (m *mockContextManager) BuildInput(sessionID string, messages []contextmanager.ContextMessage) []contextmanager.ContextMessage {
+func (m *mockContextManager) BuildInput(ctx context.Context, sessionID string, messages []contextmanager.ContextMessage) []contextmanager.ContextMessage {
 	input := make([]contextmanager.ContextMessage, 0, len(messages)+8)
 	input = append(input, contextmanager.ContextMessage{Role: "system", Content: m.BuildSystemPrompt(sessionID)})
 	input = append(input, m.GetMessages(sessionID)...)
